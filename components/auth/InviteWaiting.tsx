@@ -15,8 +15,13 @@ export default function InviteWaiting({
 }) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
-  const inviteUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}/join/${inviteCode}` : '';
+  const [inviteUrl, setInviteUrl] = useState('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setInviteUrl(`${window.location.origin}/join/${inviteCode}`);
+    }
+  }, [inviteCode]);
 
   useEffect(() => {
     // Listen for the partner claiming this pair, then jump straight in --
@@ -40,6 +45,7 @@ export default function InviteWaiting({
   }, [pairId, router]);
 
   const handleCopy = async () => {
+    if (!inviteUrl) return;
     await navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
@@ -51,12 +57,12 @@ export default function InviteWaiting({
         Send this link to her -- once she signs in with it, you&apos;re paired.
       </p>
 
-      <div className="w-full rounded-xl bg-[#372A3E] px-4 py-3 text-sm break-all">
-        {inviteUrl}
+      <div className="w-full rounded-xl bg-[#372A3E] px-4 py-3 text-sm break-all min-h-[44px] flex items-center justify-center text-[#F6EFE9]">
+        {inviteUrl || 'Loading invite link...'}
       </div>
 
       <motion.div whileTap={{ scale: 0.97 }} className="w-full">
-        <Button onClick={handleCopy} size="lg" className="w-full">
+        <Button onClick={handleCopy} size="lg" className="w-full" disabled={!inviteUrl}>
           {copied ? 'Copied!' : 'Copy invite link'}
         </Button>
       </motion.div>
