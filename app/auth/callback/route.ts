@@ -11,6 +11,10 @@ export async function GET(request: Request) {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
+    if (error) {
+      console.error('OAuth code exchange failed:', error.message);
+    }
+
     if (!error && data.user) {
       // First-time sign-in: make sure a profiles row exists.
       // Safe to call every time -- onConflict just no-ops if it's already there.
