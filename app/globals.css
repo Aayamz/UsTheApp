@@ -1,26 +1,133 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-space), 'Space Grotesk', system-ui, sans-serif;
+  --font-space: var(--font-space), 'Space Grotesk', system-ui, sans-serif;
+  
+  /* Brand specific colors */
+  --color-aubergine: #1F1324;
+  --color-coral: #FF8966;
+  --color-ivory: #F6EFE9;
+  --color-plum: #372A3E;
+  --color-plum-light: #4F3C59;
+  --color-plum-dark: #160D1A;
+  
+  /* System mappings */
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.85rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+  --radius-2xl: 2.25rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* U& Signature Dark Aubergine Palette */
+  --background: #1F1324;
+  --foreground: #F6EFE9;
+  
+  --card: #372A3E;
+  --card-foreground: #F6EFE9;
+  
+  --popover: #372A3E;
+  --popover-foreground: #F6EFE9;
+  
+  --primary: #FF8966;
+  --primary-foreground: #1F1324;
+  
+  --secondary: #4F3C59;
+  --secondary-foreground: #F6EFE9;
+  
+  --muted: #2E2134;
+  --muted-foreground: #C9B3D1;
+  
+  --accent: #FF8966;
+  --accent-foreground: #1F1324;
+  
+  --destructive: #FF5A5A;
+  --border: #4F3C59;
+  --input: #372A3E;
+  --ring: #FF8966;
+
+  --radius: 1.25rem;
+}
+
+/* Optimization for long lists (Trail feed) per AGENTS.md */
+.contain-scroll-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 160px;
+}
+
+/* Hardware accelerated layer class */
+.gpu-layer {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+/* Custom scrollbar styling for high aesthetics */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #1F1324;
+}
+::-webkit-scrollbar-thumb {
+  background: #4F3C59;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF8966;
+}
+
+/* Mobile PWA & Touch adjustments */
+html, body {
+  background-color: #1F1324;
+  color: #F6EFE9;
+  overflow-x: hidden;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* Safe area padding utilities */
+.safe-pb {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+}
+.safe-pt {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-space), system-ui, -apple-system, sans-serif;
+  }
 }
