@@ -6,16 +6,18 @@ if (workbox) {
 
   // Precache app shell static files
   workbox.precaching.precacheAndRoute([
-    { url: '/', revision: 'v1' },
-    { url: '/icon.svg', revision: 'v1' },
+    { url: '/', revision: 'v2' },
+    { url: '/icon.svg', revision: 'v2' },
   ]);
 
-  // Stale-While-Revalidate for JS / CSS / Fonts
+  // Stale-While-Revalidate for static assets (excluding dynamic Next.js HMR chunks)
   workbox.routing.registerRoute(
-    ({ request }) =>
-      request.destination === 'style' ||
-      request.destination === 'script' ||
-      request.destination === 'font',
+    ({ request, url }) =>
+      (request.destination === 'style' ||
+        request.destination === 'script' ||
+        request.destination === 'font') &&
+      !url.pathname.includes('/_next/webpack') &&
+      !url.pathname.includes('/_next/static/chunks/'),
     new workbox.strategies.StaleWhileRevalidate({
       cacheName: 'static-resources',
     })
