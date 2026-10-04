@@ -13,20 +13,19 @@ import NudgeTab from './tabs/NudgeTab';
 import { seedInitialDataIfEmpty } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 
-const SAMPLE_SPACES: GroupSpace[] = [
-  { id: 'g-1', name: '💕 Couple Space: You & Alex', type: 'couple', memberCount: 2 },
-  { id: 'g-2', name: '🎉 Anniversary 2026 Group', type: 'group', memberCount: 5 },
-];
-
 export default function NavigationShell() {
   const [activeTab, setActiveTab] = useState<TabType>('trail');
   const [profileOpen, setProfileOpen] = useState(false);
-  const [activeSpace, setActiveSpace] = useState<GroupSpace>(SAMPLE_SPACES[0]);
+  const [spaces, setSpaces] = useState<GroupSpace[]>([
+    { id: 'g-1', name: '💕 Couple Space: You & Partner', type: 'couple', memberCount: 2 },
+    { id: 'g-2', name: '🎉 Group Event Capsules', type: 'group', memberCount: 1 },
+  ]);
+  const [activeSpace, setActiveSpace] = useState<GroupSpace>(spaces[0]);
 
   const [currentUser, setCurrentUser] = useState<UserProfileInfo>({
     name: 'You',
-    email: 'creator@u-and-me.app',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+    email: 'user@u-and-me.app',
+    avatar: '',
     role: 'creator',
     roleLabel: 'Creator / Admin 👑',
     isOnline: true,
@@ -35,23 +34,76 @@ export default function NavigationShell() {
   useEffect(() => {
     seedInitialDataIfEmpty().catch((err) => console.log('Database seed skipped:', err));
 
-    // Fetch user from Supabase Auth if available
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        const email = data.user.email || 'user@u-and-me.app';
-        const displayName = data.user.user_metadata?.full_name || data.user.user_metadata?.name || email.split('@')[0];
-        const avatarUrl = data.user.user_metadata?.avatar_url || currentUser.avatar;
+    // Fetch user and partner from Supabase Auth & DB
+    const fetchUserData = async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user) return;
 
-        setCurrentUser({
-          name: displayName,
-          email,
-          avatar: avatarUrl,
-          role: 'creator',
-          roleLabel: 'Creator / Admin 👑',
-          isOnline: true,
-        });
+      const email = authData.user.email || 'user@u-and-me.app';
+      const displayName =
+        authData.user.user_metadata?.full_name ||
+        authData.user.user_metadata?.name ||
+        email.split('@')[0];
+      const avatarUrl = authData.user.user_metadata?.avatar_url || '';
+
+      // Check pair info
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('pair_id')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+      let partnerName = 'Partner';
+      let isCreator = true;
+
+      if (profile?.pair_id) {
+        const { data: pair } = await supabase
+          .from('pairs')
+          .select('created_by, partner_id')
+          .eq('id', profile.pair_id)
+          .single();
+
+        if (pair) {
+          isCreator = pair.created_by === authData.user.id;
+          const partnerId = isCreator ? pair.partner_id : pair.created_by;
+
+          if (partnerId) {
+            const { data: partnerProfile } = await supabase
+              .from('profiles')
+              .select('display_name')
+              .eq('id', partnerId)
+              .maybeSingle();
+
+            if (partnerProfile?.display_name) {
+              partnerName = partnerProfile.display_name;
+            }
+          }
+        }
       }
-    });
+
+      setCurrentUser({
+        name: displayName,
+        email,
+        avatar: avatarUrl,
+        role: isCreator ? 'creator' : 'partner',
+        roleLabel: isCreator ? 'Creator / Admin 👑' : 'Partner 💖',
+        isOnline: true,
+      });
+
+      const updatedSpaces: GroupSpace[] = [
+        {
+          id: 'g-1',
+          name: `💕 Couple Space: ${displayName} & ${partnerName}`,
+          type: 'couple',
+          memberCount: partnerName !== 'Partner' ? 2 : 1,
+        },
+        { id: 'g-2', name: '🎉 Group Event Capsules', type: 'group', memberCount: 1 },
+      ];
+      setSpaces(updatedSpaces);
+      setActiveSpace(updatedSpaces[0]);
+    };
+
+    fetchUserData().catch((e) => console.log('Error fetching user data:', e));
   }, []);
 
   const renderActiveTab = () => {
@@ -77,7 +129,7 @@ export default function NavigationShell() {
       <TopHeaderBar
         user={currentUser}
         activeSpaceName={activeSpace.name}
-        onlineCount={2}
+        onlineCount={activeSpace.memberCount}
         onOpenProfile={() => setProfileOpen(true)}
       />
 
@@ -106,7 +158,7 @@ export default function NavigationShell() {
         onClose={() => setProfileOpen(false)}
         currentUser={currentUser}
         activeSpace={activeSpace}
-        allSpaces={SAMPLE_SPACES}
+        allSpaces={spaces}
         onSelectSpace={(space) => {
           setActiveSpace(space);
           setProfileOpen(false);

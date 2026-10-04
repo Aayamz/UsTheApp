@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserProfileInfo } from './TopHeaderBar';
 import { Haptics } from '@/lib/haptics';
@@ -14,9 +14,8 @@ import {
   LogOut, 
   ShieldCheck, 
   Check, 
-  UserCheck, 
-  Sparkles,
-  Radio
+  Radio,
+  UserPlus
 } from 'lucide-react';
 
 export interface GroupSpace {
@@ -35,6 +34,13 @@ interface ProfileDrawerProps {
   onSelectSpace: (space: GroupSpace) => void;
 }
 
+interface PartnerProfile {
+  id: string;
+  displayName: string;
+  avatarUrl?: string;
+  isOnline: boolean;
+}
+
 export default function ProfileDrawer({
   isOpen,
   onClose,
@@ -45,6 +51,51 @@ export default function ProfileDrawer({
 }: ProfileDrawerProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [partner, setPartner] = useState<PartnerProfile | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Query partner profile from Supabase if paired
+    const fetchPartner = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('pair_id')
+        .eq('id', userData.user.id)
+        .maybeSingle();
+
+      if (profile?.pair_id) {
+        const { data: pair } = await supabase
+          .from('pairs')
+          .select('created_by, partner_id')
+          .eq('id', profile.pair_id)
+          .single();
+
+        if (pair) {
+          const partnerId = pair.created_by === userData.user.id ? pair.partner_id : pair.created_by;
+          if (partnerId) {
+            const { data: partnerProfile } = await supabase
+              .from('profiles')
+              .select('id, display_name, avatar_url')
+              .eq('id', partnerId)
+              .maybeSingle();
+
+            setPartner({
+              id: partnerId,
+              displayName: partnerProfile?.display_name || 'Partner',
+              avatarUrl: partnerProfile?.avatar_url,
+              isOnline: true,
+            });
+          }
+        }
+      }
+    };
+
+    fetchPartner().catch((e) => console.log('Error fetching partner:', e));
+  }, [isOpen]);
 
   const handleSignOut = async () => {
     Haptics.lightTap();
@@ -52,35 +103,6 @@ export default function ProfileDrawer({
     await supabase.auth.signOut();
     router.push('/login');
   };
-
-  // Mock list of connected users in the active space with real presence status
-  const connectedMembers = [
-    {
-      id: 'm-1',
-      name: currentUser.name + ' (You)',
-      role: currentUser.role,
-      roleLabel: currentUser.role === 'creator' ? 'Creator / Admin 👑' : 'Partner 💖',
-      isOnline: true,
-      avatar: currentUser.avatar,
-    },
-    {
-      id: 'm-2',
-      name: 'Alex',
-      role: 'partner',
-      roleLabel: 'Beloved Partner 💖',
-      isOnline: true,
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    },
-    {
-      id: 'm-3',
-      name: 'Maya',
-      role: 'friend',
-      roleLabel: 'Event Friend 👥',
-      isOnline: false,
-      lastSeen: '12m ago',
-      avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
-    },
-  ];
 
   return (
     <AnimatePresence>
@@ -196,51 +218,66 @@ export default function ProfileDrawer({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[#C9B3D1] uppercase tracking-wider flex items-center gap-1.5">
                   <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                  Currently Connected Members
+                  Connected Space Members
                 </span>
-                <span className="text-[10px] text-[#FF8966] font-semibold">2 Online</span>
               </div>
 
               <div className="space-y-2">
-                {connectedMembers.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between p-3 bg-[#1F1324] border border-[#4F3C59] rounded-2xl text-xs">
-                    <div className="flex items-center gap-2.5">
-                      <div className="relative">
-                        <img src={m.avatar} alt={m.name} className="w-8 h-8 rounded-full object-cover border border-[#4F3C59]" />
-                        <span
-                          className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#1F1324] ${
-                            m.isOnline ? 'bg-emerald-500' : 'bg-gray-500'
-                          }`}
-                        />
+                {/* You */}
+                <div className="flex items-center justify-between p-3 bg-[#1F1324] border border-[#4F3C59] rounded-2xl text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="relative">
+                      <div className="w-8 h-8 rounded-full bg-[#FF8966]/20 flex items-center justify-center text-xs font-bold text-[#F6EFE9]">
+                        {currentUser.avatar ? (
+                          <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover rounded-full" />
+                        ) : (
+                          currentUser.name.charAt(0)
+                        )}
                       </div>
-                      <div>
-                        <span className="font-bold text-[#F6EFE9] block">{m.name}</span>
-                        <span className="text-[10px] text-[#C9B3D1]">{m.roleLabel}</span>
-                      </div>
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#1F1324]" />
                     </div>
-
-                    <div className="text-right">
-                      {m.isOnline ? (
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                          Active Now
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-[#C9B3D1]/60">{m.lastSeen}</span>
-                      )}
+                    <div>
+                      <span className="font-bold text-[#F6EFE9] block">{currentUser.name} (You)</span>
+                      <span className="text-[10px] text-[#C9B3D1]">{currentUser.roleLabel}</span>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                    Active Now
+                  </span>
+                </div>
 
-            {/* Role Identifiers Explanation Box */}
-            <div className="p-4 bg-[#1F1324]/80 border border-[#4F3C59] rounded-2xl text-xs space-y-2">
-              <span className="font-bold text-[#FF8966] block">Space Roles & Identifiers:</span>
-              <ul className="space-y-1 text-[#C9B3D1] text-[11px] leading-relaxed">
-                <li>👑 <strong>Creator / Admin:</strong> Created the app space and invite link.</li>
-                <li>💖 <strong>Partner:</strong> Loved one with full shared access to Trail, Spark, Pick & Nudges.</li>
-                <li>👥 <strong>Group Friends:</strong> Invited friends connected to specific Someday event capsules.</li>
-              </ul>
+                {/* Partner */}
+                {partner ? (
+                  <div className="flex items-center justify-between p-3 bg-[#1F1324] border border-[#4F3C59] rounded-2xl text-xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative">
+                        <div className="w-8 h-8 rounded-full bg-[#FF8966]/20 flex items-center justify-center text-xs font-bold text-[#F6EFE9]">
+                          {partner.avatarUrl ? (
+                            <img src={partner.avatarUrl} alt={partner.displayName} className="w-full h-full object-cover rounded-full" />
+                          ) : (
+                            partner.displayName.charAt(0)
+                          )}
+                        </div>
+                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#1F1324]" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-[#F6EFE9] block">{partner.displayName}</span>
+                        <span className="text-[10px] text-[#C9B3D1]">Beloved Partner 💖</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                      Active Now
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-3 bg-[#1F1324]/50 border border-dashed border-[#4F3C59] rounded-2xl text-xs text-[#C9B3D1]">
+                    <div className="flex items-center gap-2">
+                      <UserPlus className="w-4 h-4 text-[#FF8966]" />
+                      <span>Waiting for partner to join...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Logout / Switch Account Button */}

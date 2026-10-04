@@ -52,7 +52,7 @@ export default function NudgeTab() {
       viewed: true,
     };
 
-    setLastSentText(`Sent ${selectedEmoji.emoji} Nudge to Alex!`);
+    setLastSentText(`Sent ${selectedEmoji.emoji} Nudge to your partner!`);
 
     // Optimistic state insert
     setNudges((prev) => [newNudge, ...prev]);

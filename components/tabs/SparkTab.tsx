@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { getDB, SparkPrompt } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
 import { Haptics } from '@/lib/haptics';
@@ -11,16 +11,13 @@ import {
   Sparkles, 
   Send, 
   CheckCircle2, 
-  Eye, 
   Calendar,
-  HeartHandshake
 } from 'lucide-react';
 
 export default function SparkTab() {
   const [prompts, setPrompts] = useState<SparkPrompt[]>([]);
   const [loading, setLoading] = useState(true);
   const [answerInput, setAnswerInput] = useState('');
-  const [justRevealed, setJustRevealed] = useState(false);
 
   const loadSparkData = async () => {
     try {
@@ -57,7 +54,6 @@ export default function SparkTab() {
     };
 
     if (isBothNowAnswered) {
-      setJustRevealed(true);
       Haptics.sparkReveal();
     }
 
@@ -66,30 +62,6 @@ export default function SparkTab() {
       prev.map((item) => (item.id === activePrompt.id ? updatedPrompt : item))
     );
     setAnswerInput('');
-
-    const db = await getDB();
-    await db.put('spark_prompts', updatedPrompt);
-    await queueMutation('spark_prompts', 'update', updatedPrompt);
-  };
-
-  const handleSimulatePartnerAnswer = async () => {
-    if (!activePrompt) return;
-    Haptics.lightTap();
-
-    const updatedPrompt: SparkPrompt = {
-      ...activePrompt,
-      partnerAnswer: 'You inspire me every day by how gentle and caring you are! 💕',
-      revealed: Boolean(activePrompt.userAnswer),
-    };
-
-    if (activePrompt.userAnswer) {
-      setJustRevealed(true);
-      Haptics.sparkReveal();
-    }
-
-    setPrompts((prev) =>
-      prev.map((item) => (item.id === activePrompt.id ? updatedPrompt : item))
-    );
 
     const db = await getDB();
     await db.put('spark_prompts', updatedPrompt);
@@ -121,7 +93,6 @@ export default function SparkTab() {
             animate={{ scale: 1, opacity: 1 }}
             className="relative overflow-hidden bg-gradient-to-b from-[#372A3E] via-[#2F1F35] to-[#25182C] border border-[#FF8966]/40 rounded-3xl p-6 shadow-2xl"
           >
-            {/* Background sparkle glow */}
             <div className="absolute top-0 right-0 w-40 h-40 bg-[#FF8966]/10 rounded-full blur-3xl pointer-events-none" />
 
             <div className="flex items-center justify-between text-xs text-[#C9B3D1] mb-3">
@@ -159,7 +130,7 @@ export default function SparkTab() {
 
                 {/* Partner Answer */}
                 <div className="bg-[#1F1324] p-4 rounded-2xl border border-[#FF8966]/30">
-                  <span className="text-[11px] font-bold text-[#C9B3D1] block mb-1">Alex's Answer</span>
+                  <span className="text-[11px] font-bold text-[#C9B3D1] block mb-1">Partner's Answer</span>
                   <p className="text-sm text-[#F6EFE9] font-medium">{activePrompt.partnerAnswer}</p>
                 </div>
               </motion.div>
@@ -174,24 +145,14 @@ export default function SparkTab() {
                   <p className="text-sm text-[#F6EFE9]">{activePrompt.userAnswer}</p>
                 </div>
 
-                <div className="p-4 bg-[#1F1324]/60 border border-[#4F3C59] rounded-2xl text-center space-y-3">
+                <div className="p-4 bg-[#1F1324]/60 border border-[#4F3C59] rounded-2xl text-center space-y-2">
                   <div className="inline-flex items-center justify-center p-3 bg-[#372A3E] rounded-full text-[#FF8966] mb-1">
                     <Lock className="w-5 h-5 animate-pulse" />
                   </div>
-                  <h3 className="text-sm font-bold text-[#F6EFE9]">Waiting for Alex to answer</h3>
+                  <h3 className="text-sm font-bold text-[#F6EFE9]">Waiting for partner to answer</h3>
                   <p className="text-xs text-[#C9B3D1]">
                     Answers remain sealed privately until both of you complete today's prompt.
                   </p>
-
-                  {/* Partner response simulation button for testing */}
-                  {!activePrompt.partnerAnswer && (
-                    <button
-                      onClick={handleSimulatePartnerAnswer}
-                      className="mt-2 text-xs text-[#FF8966] hover:underline cursor-pointer font-medium"
-                    >
-                      (Simulate Alex answering now ✨)
-                    </button>
-                  )}
                 </div>
               </div>
             ) : (
@@ -222,41 +183,6 @@ export default function SparkTab() {
               </form>
             )}
           </motion.div>
-
-          {/* Past Spark Prompts History */}
-          <div className="space-y-3 pt-2">
-            <h3 className="text-xs font-bold text-[#C9B3D1] uppercase tracking-wider">Past Sparks</h3>
-
-            {prompts
-              .filter((p) => p.id !== activePrompt.id)
-              .map((p) => (
-                <div
-                  key={p.id}
-                  className="bg-[#372A3E] border border-[#4F3C59] rounded-2xl p-4 space-y-2"
-                >
-                  <div className="flex items-center justify-between text-xs text-[#C9B3D1]">
-                    <span className="text-[#FF8966] font-semibold">{p.category}</span>
-                    <span>{p.date}</span>
-                  </div>
-                  <h4 className="text-sm font-bold text-[#F6EFE9]">{p.question}</h4>
-
-                  {p.revealed ? (
-                    <div className="mt-2 pt-2 border-t border-[#4F3C59]/50 text-xs space-y-1">
-                      <p className="text-[#C9B3D1]">
-                        <strong className="text-[#F6EFE9]">You:</strong> {p.userAnswer}
-                      </p>
-                      <p className="text-[#C9B3D1]">
-                        <strong className="text-[#FF8966]">Alex:</strong> {p.partnerAnswer}
-                      </p>
-                    </div>
-                  ) : (
-                    <span className="text-[11px] text-[#C9B3D1]/60 flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> Unrevealed
-                    </span>
-                  )}
-                </div>
-              ))}
-          </div>
         </div>
       ) : null}
     </div>

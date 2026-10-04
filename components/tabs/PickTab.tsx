@@ -248,7 +248,7 @@ export default function PickTab() {
                 <div className="text-[11px] text-[#C9B3D1]/60 flex items-center justify-between pt-2 border-t border-[#4F3C59]/40">
                   <span>Swipe Right to Like • Left to Pass</span>
                   {swipes[currentCard.id]?.partnerSwipe === 'right' && (
-                    <span className="text-[#FF8966] font-bold animate-pulse">Alex liked this! 💕</span>
+                    <span className="text-[#FF8966] font-bold animate-pulse">Partner liked this! 💕</span>
                   )}
                 </div>
               </div>
