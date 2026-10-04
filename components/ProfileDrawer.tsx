@@ -6,6 +6,7 @@ import { UserProfileInfo } from './TopHeaderBar';
 import { Haptics } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import Logo from '@/components/Logo';
 import { 
   X, 
   Crown, 
@@ -111,19 +112,20 @@ export default function ProfileDrawer({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 bg-[#1F1324]/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3"
+          className="fixed inset-0 z-[60] bg-[#1F1324]/85 backdrop-blur-md flex items-end sm:items-center justify-center p-3 safe-pb"
         >
           <motion.div
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="w-full max-w-md bg-[#372A3E] border border-[#4F3C59] rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto space-y-6"
+            className="w-full max-w-md bg-[#372A3E] border border-[#4F3C59] rounded-3xl p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto pb-12 mb-14 sm:mb-0 space-y-6"
           >
             {/* Header close */}
             <div className="flex items-center justify-between border-b border-[#4F3C59] pb-3">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg text-[#F6EFE9]">U& Account & Group</span>
+                <Logo size={28} showWordmark />
+                <span className="text-xs text-[#C9B3D1]">Account & Group</span>
               </div>
               <button
                 onClick={() => {

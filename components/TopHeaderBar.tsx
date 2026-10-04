@@ -3,6 +3,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Haptics } from '@/lib/haptics';
+import Logo from '@/components/Logo';
 import { Users, Crown, Heart, ShieldCheck } from 'lucide-react';
 
 export interface UserProfileInfo {
@@ -27,25 +28,11 @@ export default function TopHeaderBar({
   onlineCount,
   onOpenProfile,
 }: TopHeaderBarProps) {
-  const getRoleIcon = () => {
-    switch (user.role) {
-      case 'creator':
-        return <Crown className="w-3 h-3 text-[#FF8966]" />;
-      case 'partner':
-        return <Heart className="w-3 h-3 text-[#FF8966]" />;
-      case 'friend':
-        return <Users className="w-3 h-3 text-[#C9B3D1]" />;
-    }
-  };
-
   return (
-    <header className="sticky top-0 z-40 bg-[#1F1324]/90 backdrop-blur-md border-b border-[#4F3C59]/50 px-4 py-2.5 flex items-center justify-between safe-pt max-w-md mx-auto w-full">
-      {/* Brand Logotype: U in Ivory, & in Coral */}
+    <header className="sticky top-0 z-40 bg-[#1F1324]/95 backdrop-blur-md border-b border-[#4F3C59]/50 px-4 py-2 flex items-center justify-between safe-pt max-w-md mx-auto w-full">
+      {/* Brand Icon Logo */}
       <div className="flex items-center gap-2">
-        <span className="font-extrabold text-xl tracking-tight">
-          <span className="text-[#F6EFE9]">U</span>
-          <span className="text-[#FF8966]">&</span>
-        </span>
+        <Logo size={32} />
 
         {/* Active Group / Space Indicator Pill */}
         <button

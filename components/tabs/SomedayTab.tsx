@@ -10,13 +10,9 @@ import {
   Unlock, 
   Plus, 
   Calendar, 
-  Clock, 
   Users, 
   Sparkles, 
   X,
-  FileText,
-  Image as ImageIcon,
-  Mic,
   Gift
 } from 'lucide-react';
 
@@ -57,7 +53,6 @@ export default function SomedayTab() {
 
     Haptics.lightTap();
 
-    // Default unlock date if not provided: 30 days from today
     const unlockTarget = unlockDateStr 
       ? new Date(unlockDateStr).toISOString() 
       : new Date(Date.now() + 30 * 86400000).toISOString();
@@ -68,7 +63,7 @@ export default function SomedayTab() {
       content: content.trim(),
       unlockDate: unlockTarget,
       mediaType,
-      mediaUrl: mediaUrl.trim() || (mediaType === 'image' ? 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=800&auto=format&fit=crop&q=80' : undefined),
+      mediaUrl: mediaUrl.trim() || undefined,
       sealedBy: 'You',
       isUnlocked: false,
       createdAt: new Date().toISOString(),
@@ -112,25 +107,6 @@ export default function SomedayTab() {
     await queueMutation('someday_capsules', 'update', updatedCapsule);
   };
 
-  // Contribute note to existing capsule event
-  const handleContribute = async (capsuleId: string) => {
-    Haptics.lightTap();
-    const db = await getDB();
-    const capsule = await db.get('someday_capsules', capsuleId);
-    if (capsule) {
-      const newContrib = {
-        id: `u-${Date.now()}`,
-        name: 'Alex',
-        avatar: '🌿',
-        addedAt: new Date().toISOString(),
-        messageSnippet: 'Added secret photo + letter for unlock day!',
-      };
-      capsule.contributors.push(newContrib);
-      await db.put('someday_capsules', capsule);
-      setCapsules((prev) => prev.map((c) => (c.id === capsuleId ? { ...c, contributors: capsule.contributors } : c)));
-    }
-  };
-
   return (
     <div className="flex-1 overflow-y-auto pb-24 safe-pt px-4 max-w-md mx-auto w-full">
       {/* Header */}
@@ -155,6 +131,16 @@ export default function SomedayTab() {
       {loading ? (
         <div className="space-y-4 my-4">
           <div className="h-44 bg-[#372A3E]/60 animate-pulse rounded-3xl border border-[#4F3C59]/40" />
+        </div>
+      ) : capsules.length === 0 ? (
+        <div className="text-center py-16 px-6 bg-[#372A3E]/40 border border-[#4F3C59]/50 rounded-3xl space-y-3 my-4">
+          <div className="inline-flex p-3 bg-[#FF8966]/20 text-[#FF8966] rounded-full">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-[#F6EFE9]">No time capsules sealed yet</h3>
+          <p className="text-xs text-[#C9B3D1]">
+            Create a future time capsule with secret letters or photos to unseal on a special date.
+          </p>
         </div>
       ) : (
         <div className="space-y-5 my-3">
@@ -193,33 +179,6 @@ export default function SomedayTab() {
                   <div className={`p-2.5 rounded-2xl ${item.isUnlocked ? 'bg-[#FF8966]/20 text-[#FF8966]' : 'bg-[#1F1324] text-[#C9B3D1]'}`}>
                     {item.isUnlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
                   </div>
-                </div>
-
-                {/* Contributors Avatars */}
-                <div className="flex items-center justify-between my-3 pt-3 border-t border-[#4F3C59]/50">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-semibold text-[#C9B3D1]">Contributors:</span>
-                    <div className="flex -space-x-1.5">
-                      {item.contributors.map((c) => (
-                        <div
-                          key={c.id}
-                          title={c.name}
-                          className="w-7 h-7 rounded-full bg-[#1F1324] border border-[#FF8966]/40 flex items-center justify-center text-xs shadow"
-                        >
-                          {c.avatar}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {!item.isUnlocked && (
-                    <button
-                      onClick={() => handleContribute(item.id)}
-                      className="text-[11px] font-bold text-[#FF8966] hover:underline cursor-pointer"
-                    >
-                      + Add Note
-                    </button>
-                  )}
                 </div>
 
                 {/* Unlocked State vs Sealed State */}
@@ -276,23 +235,23 @@ export default function SomedayTab() {
         </div>
       )}
 
-      {/* Create Capsule Modal */}
+      {/* Create Capsule Modal with High Z-Index & Extra Scroll Margin */}
       <AnimatePresence>
         {showCreateModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[#1F1324]/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4"
+            className="fixed inset-0 z-[60] bg-[#1F1324]/85 backdrop-blur-md flex items-end sm:items-center justify-center p-4 safe-pb"
           >
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="w-full max-w-md bg-[#372A3E] border border-[#4F3C59] rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-md bg-[#372A3E] border border-[#4F3C59] rounded-3xl p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto pb-14 mb-16 sm:mb-0"
             >
-              <div className="flex items-center justify-between mb-4 border-b border-[#4F3C59] pb-3">
+              <div className="flex items-center justify-between mb-4 border-b border-[#4F3C59] pb-3 sticky top-0 bg-[#372A3E] z-10">
                 <h3 className="text-lg font-bold text-[#F6EFE9]">Compose Time Capsule</h3>
                 <button
                   onClick={() => setShowCreateModal(false)}
@@ -330,7 +289,7 @@ export default function SomedayTab() {
                   <label className="text-xs font-semibold text-[#C9B3D1] block mb-1">Group Event Scope (Optional)</label>
                   <input
                     type="text"
-                    placeholder="e.g. Maya's Wedding Party 2026"
+                    placeholder="e.g. Wedding Anniversary Party 2026"
                     value={eventName}
                     onChange={(e) => setEventName(e.target.value)}
                     className="w-full bg-[#1F1324] border border-[#4F3C59] rounded-xl px-3.5 py-2 text-sm text-[#F6EFE9] focus:outline-none focus:border-[#FF8966]"
@@ -349,10 +308,10 @@ export default function SomedayTab() {
                   />
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-3 pb-6">
                   <button
                     type="submit"
-                    className="w-full py-3.5 bg-[#FF8966] text-[#1F1324] font-bold text-sm rounded-2xl shadow-lg hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3.5 bg-[#FF8966] text-[#1F1324] font-bold text-sm rounded-2xl shadow-xl hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Lock className="w-4 h-4" />
                     <span>Seal & Lock Capsule 🔒</span>

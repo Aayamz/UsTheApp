@@ -302,7 +302,7 @@ export default function PickTab() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed inset-0 z-50 bg-[#1F1324]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center"
+            className="fixed inset-0 z-[60] bg-[#1F1324]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center"
           >
             <motion.div
               initial={{ scale: 0, rotate: -15 }}
@@ -316,7 +316,7 @@ export default function PickTab() {
 
               <div>
                 <h2 className="text-3xl font-extrabold text-[#F6EFE9] mb-1">It's a Match! 🎉</h2>
-                <p className="text-sm text-[#FF8966] font-semibold">You and Alex both picked this!</p>
+                <p className="text-sm text-[#FF8966] font-semibold">You and your partner both picked this!</p>
               </div>
 
               <div className="bg-[#372A3E] border border-[#FF8966] rounded-3xl p-4 shadow-xl text-left">
@@ -343,15 +343,15 @@ export default function PickTab() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[#1F1324]/80 backdrop-blur-md flex items-end justify-center p-4"
+            className="fixed inset-0 z-[60] bg-[#1F1324]/85 backdrop-blur-md flex items-end justify-center p-4 safe-pb"
           >
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              className="w-full max-w-md bg-[#372A3E] border border-[#4F3C59] rounded-3xl p-6 shadow-2xl max-h-[80vh] overflow-y-auto"
+              className="w-full max-w-md bg-[#372A3E] border border-[#4F3C59] rounded-3xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto pb-14 mb-16 sm:mb-0"
             >
-              <div className="flex items-center justify-between mb-4 border-b border-[#4F3C59] pb-3">
+              <div className="flex items-center justify-between mb-4 border-b border-[#4F3C59] pb-3 sticky top-0 bg-[#372A3E] z-10">
                 <h3 className="text-lg font-bold text-[#F6EFE9]">Our Mutual Matches 💕</h3>
                 <button
                   onClick={() => setShowMatchesModal(false)}

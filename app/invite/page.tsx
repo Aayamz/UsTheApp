@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { ensurePairForUser } from '@/lib/pairing';
 import InviteWaiting from '@/components/auth/InviteWaiting';
+import Logo from '@/components/Logo';
 
 export default async function InvitePage() {
   const supabase = await createSupabaseServerClient();
@@ -16,8 +17,9 @@ export default async function InvitePage() {
   if (pair.partner_id) redirect('/');
 
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center gap-6 px-8 text-center">
-      <h1 className="text-2xl font-semibold">Invite her in</h1>
+    <div className="h-full w-full flex flex-col items-center justify-center gap-6 px-8 text-center bg-[#1F1324] text-[#F6EFE9]">
+      <Logo size={48} showWordmark />
+      <h1 className="text-xl font-bold">Invite your partner in</h1>
       <InviteWaiting pairId={pair.id} inviteCode={pair.invite_code} />
     </div>
   );

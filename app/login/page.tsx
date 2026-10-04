@@ -1,4 +1,5 @@
 import GoogleSignInButton from '@/components/auth/GoogleSignInButton';
+import Logo from '@/components/Logo';
 
 export default async function LoginPage({
   searchParams,
@@ -8,11 +9,10 @@ export default async function LoginPage({
   const params = await searchParams;
 
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center gap-6 px-8 text-center">
-      <div className="flex flex-col items-center gap-2">
-        {/* Swap in the real U& logo SVG here */}
-        <h1 className="text-4xl font-semibold tracking-tight">U&</h1>
-        <p className="text-sm text-[#F6EFE9]/60">A quiet place for just the two of you.</p>
+    <div className="h-full w-full flex flex-col items-center justify-center gap-6 px-8 text-center bg-[#1F1324] text-[#F6EFE9]">
+      <div className="flex flex-col items-center gap-3">
+        <Logo size={64} showWordmark />
+        <p className="text-sm text-[#C9B3D1]">A quiet place for just the two of you.</p>
       </div>
 
       {params.error && (

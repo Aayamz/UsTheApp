@@ -12,9 +12,7 @@ import {
   Heart, 
   Clock, 
   Sparkles, 
-  Image as ImageIcon, 
   X,
-  ChevronRight
 } from 'lucide-react';
 
 export default function TrailTab() {
@@ -132,6 +130,16 @@ export default function TrailTab() {
           <div className="h-44 bg-[#372A3E]/60 animate-pulse rounded-2xl border border-[#4F3C59]/40" />
           <div className="h-64 bg-[#372A3E]/60 animate-pulse rounded-2xl border border-[#4F3C59]/40" />
         </div>
+      ) : entries.length === 0 ? (
+        <div className="text-center py-16 px-6 bg-[#372A3E]/40 border border-[#4F3C59]/50 rounded-3xl space-y-3 my-4">
+          <div className="inline-flex p-3 bg-[#FF8966]/20 text-[#FF8966] rounded-full">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-[#F6EFE9]">No moments in Trail yet</h3>
+          <p className="text-xs text-[#C9B3D1]">
+            Tap "Add Moment" above to share your first photo memory or upcoming countdown.
+          </p>
+        </div>
       ) : (
         <div className="space-y-5 my-3">
           {entries.map((item) => {
@@ -178,48 +186,6 @@ export default function TrailTab() {
                       <span className="text-xl font-extrabold text-[#FF8966]">{daysLeft}</span>
                       <span className="text-xs font-semibold text-[#F6EFE9]">days left</span>
                     </div>
-                  </div>
-                </motion.div>
-              );
-            }
-
-            if (item.type === 'on_this_day') {
-              return (
-                <motion.div
-                  key={item.id}
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="contain-scroll-item relative overflow-hidden bg-gradient-to-r from-[#372A3E] via-[#2F1F35] to-[#372A3E] border border-[#C9B3D1]/30 rounded-2xl p-5 shadow-lg"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="w-4 h-4 text-[#FF8966]" />
-                    <span className="text-xs font-bold text-[#FF8966] uppercase tracking-wider">On This Day</span>
-                  </div>
-
-                  <h3 className="text-base font-bold text-[#F6EFE9] mb-1">{item.title}</h3>
-                  {item.description && <p className="text-xs text-[#C9B3D1] mb-3 leading-relaxed">{item.description}</p>}
-
-                  {item.imageUrl && (
-                    <div className="relative h-44 w-full rounded-xl overflow-hidden mb-3 border border-[#4F3C59]">
-                      <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between text-xs text-[#C9B3D1] pt-1">
-                    {item.location && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-[#FF8966]" />
-                        {item.location}
-                      </span>
-                    )}
-
-                    <button
-                      onClick={() => handleLike(item.id, item.likesCount)}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-[#1F1324]/50 rounded-full border border-[#4F3C59] active:scale-90 transition-transform cursor-pointer"
-                    >
-                      <Heart className="w-3.5 h-3.5 fill-[#FF8966] text-[#FF8966]" />
-                      <span className="text-xs font-bold text-[#F6EFE9]">{item.likesCount}</span>
-                    </button>
                   </div>
                 </motion.div>
               );
@@ -274,23 +240,23 @@ export default function TrailTab() {
         </div>
       )}
 
-      {/* Add Moment Modal */}
+      {/* Add Moment Modal with High Z-Index & Extra Scroll Margin */}
       <AnimatePresence>
         {showAddModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[#1F1324]/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4"
+            className="fixed inset-0 z-[60] bg-[#1F1324]/85 backdrop-blur-md flex items-end sm:items-center justify-center p-4 safe-pb"
           >
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="w-full max-w-md bg-[#372A3E] border border-[#4F3C59] rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-md bg-[#372A3E] border border-[#4F3C59] rounded-3xl p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto pb-14 mb-16 sm:mb-0"
             >
-              <div className="flex items-center justify-between mb-4 border-b border-[#4F3C59] pb-3">
+              <div className="flex items-center justify-between mb-4 border-b border-[#4F3C59] pb-3 sticky top-0 bg-[#372A3E] z-10">
                 <h3 className="text-lg font-bold text-[#F6EFE9]">Create Trail Entry</h3>
                 <button
                   onClick={() => setShowAddModal(false)}
@@ -396,10 +362,10 @@ export default function TrailTab() {
                   />
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-3 pb-6">
                   <button
                     type="submit"
-                    className="w-full py-3 bg-[#FF8966] text-[#1F1324] font-bold text-sm rounded-xl hover:brightness-110 active:scale-98 transition-all cursor-pointer shadow-lg"
+                    className="w-full py-3.5 bg-[#FF8966] text-[#1F1324] font-bold text-sm rounded-xl hover:brightness-110 active:scale-98 transition-all cursor-pointer shadow-xl"
                   >
                     Post to Trail 🌟
                   </button>
