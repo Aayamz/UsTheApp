@@ -1,28 +1,53 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
-// Call with a server-side client (see lib/supabase-server.ts) inside
-// Server Components / Route Handlers only.
-
 export async function getMyProfile(supabase: SupabaseClient, userId: string) {
-  const { data } = await supabase
+  const { data: profile } = await supabase
     .from('profiles')
     .select('id, pair_id, display_name')
     .eq('id', userId)
-    .single();
-  return data;
+    .maybeSingle();
+
+  if (profile?.pair_id) {
+    return profile;
+  }
+
+  // Fallback check: see if user belongs to a pair in pairs table
+  const { data: pair } = await supabase
+    .from('pairs')
+    .select('id')
+    .or(`created_by.eq.${userId},partner_id.eq.${userId}`)
+    .maybeSingle();
+
+  if (pair) {
+    await supabase.from('profiles').upsert({
+      id: userId,
+      pair_id: pair.id,
+      display_name: profile?.display_name || undefined,
+    });
+    return { id: userId, pair_id: pair.id, display_name: profile?.display_name };
+  }
+
+  return profile;
 }
 
-// Returns the user's existing pair (as creator or partner), or creates a
-// fresh one with a generated invite code if they don't have one yet.
 export async function ensurePairForUser(supabase: SupabaseClient, userId: string) {
+  // Check if user is creator or partner in an existing pair
   const { data: existing } = await supabase
     .from('pairs')
     .select('*')
     .or(`created_by.eq.${userId},partner_id.eq.${userId}`)
     .maybeSingle();
 
-  if (existing) return existing;
+  if (existing) {
+    // Always keep profiles table in sync using upsert
+    await supabase.from('profiles').upsert({
+      id: userId,
+      pair_id: existing.id,
+    });
+    return existing;
+  }
 
+  // Create new pair if none exists
   const { data: created, error } = await supabase
     .from('pairs')
     .insert({ created_by: userId })
@@ -31,7 +56,10 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
 
   if (error) throw error;
 
-  await supabase.from('profiles').update({ pair_id: created.id }).eq('id', userId);
+  await supabase.from('profiles').upsert({
+    id: userId,
+    pair_id: created.id,
+  });
 
   return created;
 }
@@ -45,8 +73,6 @@ export async function getPairByInviteCode(supabase: SupabaseClient, code: string
   return data;
 }
 
-// Joins the signed-in user to an open invite. Returns the updated pair,
-// or null if the invite was invalid / already claimed / is the user's own.
 export async function joinPairByCode(
   supabase: SupabaseClient,
   code: string,
@@ -54,9 +80,22 @@ export async function joinPairByCode(
 ) {
   const pair = await getPairByInviteCode(supabase, code);
   if (!pair) return null;
-  if (pair.created_by === userId) return pair; // it's your own invite, nothing to do
-  if (pair.partner_id) return pair.partner_id === userId ? pair : null; // already claimed by someone else
 
+  if (pair.created_by === userId) {
+    await supabase.from('profiles').upsert({ id: userId, pair_id: pair.id });
+    return pair;
+  }
+
+  if (pair.partner_id && pair.partner_id !== userId) {
+    return null; // Already claimed by someone else
+  }
+
+  if (pair.partner_id === userId) {
+    await supabase.from('profiles').upsert({ id: userId, pair_id: pair.id });
+    return pair;
+  }
+
+  // Update pairs row to set partner_id
   const { data: updated, error } = await supabase
     .from('pairs')
     .update({ partner_id: userId })
@@ -67,7 +106,11 @@ export async function joinPairByCode(
 
   if (error || !updated) return null;
 
-  await supabase.from('profiles').update({ pair_id: updated.id }).eq('id', userId);
+  // Sync profiles for invited user
+  await supabase.from('profiles').upsert({
+    id: userId,
+    pair_id: updated.id,
+  });
 
   return updated;
 }

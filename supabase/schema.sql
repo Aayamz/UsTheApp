@@ -20,9 +20,7 @@ alter table pairs enable row level security;
 alter table profiles enable row level security;
 
 -- PAIRS policies
--- Anyone signed in can read a pair row that's either theirs already,
--- or still open (no partner yet) -- needed so the /join/[code] page can
--- preview an invite before the second person has joined it.
+drop policy if exists "read own or open pairs" on pairs;
 create policy "read own or open pairs"
   on pairs for select
   using (
@@ -31,22 +29,24 @@ create policy "read own or open pairs"
     or partner_id is null
   );
 
+drop policy if exists "create own pair" on pairs;
 create policy "create own pair"
   on pairs for insert
   with check (created_by = auth.uid());
 
--- Claiming an open invite: only allowed while partner_id is still null,
--- and you can only ever set it to yourself.
+drop policy if exists "join open invite" on pairs;
 create policy "join open invite"
   on pairs for update
-  using (partner_id is null)
+  using (partner_id is null or partner_id = auth.uid())
   with check (partner_id = auth.uid());
 
 -- PROFILES policies
+drop policy if exists "read own profile" on profiles;
 create policy "read own profile"
   on profiles for select
   using (id = auth.uid());
 
+drop policy if exists "read partner profile" on profiles;
 create policy "read partner profile"
   on profiles for select
   using (
@@ -54,10 +54,32 @@ create policy "read partner profile"
     and pair_id = (select pair_id from profiles p2 where p2.id = auth.uid())
   );
 
+drop policy if exists "upsert own profile" on profiles;
 create policy "upsert own profile"
   on profiles for insert
   with check (id = auth.uid());
 
+drop policy if exists "update own profile" on profiles;
 create policy "update own profile"
   on profiles for update
   using (id = auth.uid());
+
+-- Automatic trigger to create profile row when new auth user registers
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, display_name, avatar_url)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', new.email),
+    new.raw_user_meta_data->>'avatar_url'
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
