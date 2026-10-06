@@ -87,14 +87,16 @@ export default function NavigationShell() {
           isCreator = pair.created_by === authData.user.id;
           const partnerId = isCreator ? pair.partner_id : pair.created_by;
 
-          if (partnerId) {
+          if (partnerId && partnerId !== authData.user.id) {
             const { data: partnerProfile } = await supabase
               .from('profiles')
               .select('display_name')
               .eq('id', partnerId)
               .maybeSingle();
 
-            partnerName = partnerProfile?.display_name || 'Partner';
+            if (partnerProfile) {
+              partnerName = partnerProfile.display_name || 'Partner';
+            }
           }
         }
       }

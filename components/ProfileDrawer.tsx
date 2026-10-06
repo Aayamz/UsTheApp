@@ -83,19 +83,23 @@ export default function ProfileDrawer({
           setInviteCode(pair.invite_code || '');
 
           const partnerId = pair.created_by === userData.user.id ? pair.partner_id : pair.created_by;
-          if (partnerId) {
+          if (partnerId && partnerId !== userData.user.id) {
             const { data: partnerProfile } = await supabase
               .from('profiles')
               .select('id, display_name, avatar_url')
               .eq('id', partnerId)
               .maybeSingle();
 
-            setPartner({
-              id: partnerId,
-              displayName: partnerProfile?.display_name || 'Partner',
-              avatarUrl: partnerProfile?.avatar_url,
-              isOnline: true,
-            });
+            if (partnerProfile) {
+              setPartner({
+                id: partnerId,
+                displayName: partnerProfile.display_name || 'Partner',
+                avatarUrl: partnerProfile.avatar_url,
+                isOnline: true,
+              });
+            } else {
+              setPartner(null);
+            }
           } else {
             setPartner(null);
           }
