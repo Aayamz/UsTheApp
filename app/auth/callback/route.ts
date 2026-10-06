@@ -2,10 +2,20 @@ import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get('code');
-  // Preserve where the user was headed, e.g. /join/abc123
-  const next = searchParams.get('next') ?? '/';
+  const requestUrl = new URL(request.url);
+  const code = requestUrl.searchParams.get('code');
+  const next = requestUrl.searchParams.get('next') ?? '/';
+
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const host = request.headers.get('host');
+  const protocol = request.headers.get('x-forwarded-proto') || 'https';
+
+  let origin = requestUrl.origin;
+  if (forwardedHost) {
+    origin = `${protocol}://${forwardedHost}`;
+  } else if (host && !host.includes('localhost')) {
+    origin = `${protocol}://${host}`;
+  }
 
   if (code) {
     const supabase = await createSupabaseServerClient();
@@ -16,8 +26,6 @@ export async function GET(request: Request) {
     }
 
     if (!error && data.user) {
-      // First-time sign-in: make sure a profiles row exists.
-      // Safe to call every time -- onConflict just no-ops if it's already there.
       await supabase.from('profiles').upsert(
         {
           id: data.user.id,
@@ -32,6 +40,5 @@ export async function GET(request: Request) {
     }
   }
 
-  // Something went wrong -- send them back to login with an error flag.
   return NextResponse.redirect(`${origin}/login?error=auth`);
 }
