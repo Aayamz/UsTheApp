@@ -113,6 +113,12 @@ export default function NavigationShell() {
         if (createdPair) allPairs = [createdPair];
       }
 
+      // Filter out duplicate empty standalone pairs if user has a partnered/joined space
+      const populatedPairs = allPairs.filter(
+        (p) => p.partner_id !== null || p.created_by !== authData.user.id
+      );
+      const activePairsList = populatedPairs.length > 0 ? populatedPairs : [allPairs[0]];
+
       // Get user profile to check active pair_id preference
       const { data: userProfile } = await supabase
         .from('profiles')
@@ -120,19 +126,22 @@ export default function NavigationShell() {
         .eq('id', authData.user.id)
         .maybeSingle();
 
-      // Build GroupSpace items for each pair
+      // Build GroupSpace items for each active pair
       const spaceItems: GroupSpace[] = [];
-      for (const pair of allPairs) {
+      for (const pair of activePairsList) {
+        const { data: friendMembers } = await supabase
+          .from('space_members')
+          .select('user_id')
+          .eq('space_id', pair.id)
+          .eq('role', 'friend');
+
+        const friendUserIds = (friendMembers || []).map((fm) => fm.user_id);
+        const hasFriendMembers = friendUserIds.length > 0;
+
         const memberIds = new Set<string>();
         if (pair.created_by) memberIds.add(pair.created_by);
         if (pair.partner_id) memberIds.add(pair.partner_id);
-
-        const { data: smData } = await supabase
-          .from('space_members')
-          .select('user_id')
-          .eq('space_id', pair.id);
-
-        (smData || []).forEach((sm) => memberIds.add(sm.user_id));
+        friendUserIds.forEach((id) => memberIds.add(id));
 
         const memberIdArray = Array.from(memberIds);
         const { data: memberProfiles } = await supabase
@@ -152,7 +161,7 @@ export default function NavigationShell() {
         let spaceName = '';
         let spaceType: 'couple' | 'group' = 'couple';
 
-        if (memberIdArray.length >= 3 || (smData && smData.length > 0)) {
+        if (hasFriendMembers || memberIdArray.length >= 3) {
           spaceType = 'group';
           spaceName = `🎉 Friends Space: ${names.join(', ')}`;
         } else if (memberIdArray.length === 2) {
@@ -187,8 +196,8 @@ export default function NavigationShell() {
       });
 
       // Determine user role in active space
-      const targetActiveId = activeItem?.id || userProfile?.pair_id || allPairs[0]?.id;
-      const activePairObj = allPairs.find((p) => p.id === targetActiveId);
+      const targetActiveId = activeItem?.id || userProfile?.pair_id || activePairsList[0]?.id;
+      const activePairObj = activePairsList.find((p) => p.id === targetActiveId);
       let role: 'creator' | 'partner' | 'friend' = 'creator';
       let roleLabel = 'Creator / Admin 👑';
 

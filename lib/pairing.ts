@@ -16,23 +16,7 @@ export async function getMyProfile(supabase: SupabaseClient, userId: string) {
     if (pair) return { ...profile, pair_id: pair.id };
   }
 
-  // Check space_members first for joined friend spaces
-  const { data: memberRows } = await supabase
-    .from('space_members')
-    .select('space_id')
-    .eq('user_id', userId);
-
-  if (memberRows && memberRows.length > 0) {
-    const spaceId = memberRows[0].space_id;
-    await supabase.from('profiles').upsert({
-      id: userId,
-      pair_id: spaceId,
-      display_name: profile?.display_name || undefined,
-    });
-    return { id: userId, pair_id: spaceId, display_name: profile?.display_name };
-  }
-
-  // Search in pairs table
+  // 1. Search in pairs table for partnered space
   const { data: pairs } = await supabase
     .from('pairs')
     .select('id, created_by, partner_id, created_at')
@@ -50,6 +34,22 @@ export async function getMyProfile(supabase: SupabaseClient, userId: string) {
       display_name: profile?.display_name || undefined,
     });
     return { id: userId, pair_id: activePair.id, display_name: profile?.display_name };
+  }
+
+  // 2. Search in space_members for joined friend spaces
+  const { data: memberRows } = await supabase
+    .from('space_members')
+    .select('space_id')
+    .eq('user_id', userId);
+
+  if (memberRows && memberRows.length > 0) {
+    const spaceId = memberRows[0].space_id;
+    await supabase.from('profiles').upsert({
+      id: userId,
+      pair_id: spaceId,
+      display_name: profile?.display_name || undefined,
+    });
+    return { id: userId, pair_id: spaceId, display_name: profile?.display_name };
   }
 
   return profile;
@@ -82,7 +82,28 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     }
   }
 
-  // 2. Check space_members for joined friend/group spaces
+  // 2. Search for pairs where user is creator or partner - PREFER PARTNERED PAIRS!
+  const { data: pairs } = await supabase
+    .from('pairs')
+    .select('*')
+    .or(`created_by.eq.${userId},partner_id.eq.${userId}`);
+
+  if (pairs && pairs.length > 0) {
+    const activePair =
+      pairs.find((p) => p.partner_id !== null) ||
+      pairs.find((p) => p.partner_id === userId) ||
+      pairs.find((p) => p.created_by === userId) ||
+      pairs[0];
+
+    await supabase.from('profiles').upsert({
+      id: userId,
+      pair_id: activePair.id,
+      display_name: displayName,
+    });
+    return activePair;
+  }
+
+  // 3. Search space_members for friend spaces
   const { data: memberRows } = await supabase
     .from('space_members')
     .select('space_id')
@@ -103,27 +124,6 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
       });
       return friendPair;
     }
-  }
-
-  // 3. Search for pairs - PREFER PARTNERED PAIRS over empty standalone pairs!
-  const { data: pairs } = await supabase
-    .from('pairs')
-    .select('*')
-    .or(`created_by.eq.${userId},partner_id.eq.${userId}`);
-
-  if (pairs && pairs.length > 0) {
-    const activePair =
-      pairs.find((p) => p.partner_id !== null) ||
-      pairs.find((p) => p.partner_id === userId) ||
-      pairs.find((p) => p.created_by === userId) ||
-      pairs[0];
-
-    await supabase.from('profiles').upsert({
-      id: userId,
-      pair_id: activePair.id,
-      display_name: displayName,
-    });
-    return activePair;
   }
 
   // 4. Create new pair if none exists
@@ -211,39 +211,27 @@ export async function joinPairByCode(
           .neq('id', updated.id);
       } catch {}
 
-      try {
-        await supabase.from('space_members').upsert({
-          space_id: updated.id,
-          user_id: userId,
-          role: 'partner',
-        });
-      } catch {}
       return { pair: updated, role: 'partner' };
     }
   }
 
   // Option 2: Partner slot is already taken -> Join as Group Friend 🥳
   try {
-    // Register creator, partner, and joining friend in space_members
-    await supabase.from('space_members').upsert({
-      space_id: pair.id,
-      user_id: pair.created_by,
-      role: 'creator',
-    });
-
-    if (pair.partner_id) {
-      await supabase.from('space_members').upsert({
-        space_id: pair.id,
-        user_id: pair.partner_id,
-        role: 'partner',
-      });
-    }
-
     await supabase.from('space_members').upsert({
       space_id: pair.id,
       user_id: userId,
       role: 'friend',
     });
+
+    // Clean up empty standalone pairs for joining friend
+    try {
+      await supabase
+        .from('pairs')
+        .delete()
+        .eq('created_by', userId)
+        .is('partner_id', null)
+        .neq('id', pair.id);
+    } catch {}
   } catch (e) {
     console.error('Error adding to space_members:', e);
   }

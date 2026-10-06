@@ -138,9 +138,10 @@ export default function ProfileDrawer({
             setConnectedMembers(
               memberProfiles.map((p) => {
                 const r = roleMap.get(p.id);
-                let label = 'Connected Member 💖';
+                let label = 'Connected Partner 💖';
                 if (r === 'friend') label = 'Group Friend 🥳';
                 else if (r === 'creator') label = 'Space Creator 👑';
+                else if (r === 'partner') label = 'Connected Partner 💖';
 
                 return {
                   id: p.id,
