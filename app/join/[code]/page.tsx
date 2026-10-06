@@ -47,22 +47,9 @@ export default async function JoinPage({
     );
   }
 
-  if (pair.partner_id && pair.partner_id !== user.id) {
-    return (
-      <div className="h-full w-full flex flex-col items-center justify-center gap-4 px-8 text-center bg-[#1F1324] text-[#F6EFE9]">
-        <Logo size={48} showWordmark />
-        <h1 className="text-xl font-bold">This invite has already been claimed</h1>
-        <p className="text-sm text-[#C9B3D1]">Someone else has already joined this space.</p>
-        <Link href="/" className="mt-4 px-4 py-2 bg-[#FF8966] text-[#1F1324] font-bold text-xs rounded-full">
-          Go to Home
-        </Link>
-      </div>
-    );
-  }
+  const joinResult = await joinPairByCode(supabase, code, user.id);
 
-  const joinedPair = await joinPairByCode(supabase, code, user.id);
-
-  if (!joinedPair) {
+  if (!joinResult) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center gap-4 px-8 text-center bg-[#1F1324] text-[#F6EFE9]">
         <Logo size={48} showWordmark />

@@ -12,6 +12,15 @@ returns boolean language sql security definer set search_path = '' as $$
   );
 $$;
 
+create table if not exists space_members (
+  id uuid primary key default gen_random_uuid(),
+  space_id uuid references pairs on delete cascade,
+  user_id uuid references auth.users on delete cascade,
+  role text default 'friend', -- 'partner' | 'friend'
+  created_at timestamptz default now(),
+  unique(space_id, user_id)
+);
+
 create table if not exists trail_entries (
   id text primary key,
   pair_id uuid references pairs,
@@ -105,7 +114,7 @@ alter table nudges alter column sender drop not null;
 do $$
 declare t text;
 begin
-  foreach t in array array['trail_entries','spark_prompts','someday_capsules','pick_cards','pick_swipes','nudges']
+  foreach t in array array['space_members','trail_entries','spark_prompts','someday_capsules','pick_cards','pick_swipes','nudges']
   loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists "pair members full access" on %I', t);
