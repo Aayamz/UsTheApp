@@ -21,24 +21,98 @@ export async function queueMutation(store: string, action: 'insert' | 'update' |
   } catch {}
 }
 
-// Format local payload for Supabase database schema
+// Format local IndexedDB camelCase model to match Supabase Postgres SQL schema
 function prepareSupabasePayload(store: string, payload: any, userId: string, pairId: string | null) {
-  if (store === 'pick_swipes') {
-    return {
-      id: payload.id || `ps-${userId}-${payload.cardId || payload.card_id}`,
-      pair_id: pairId || payload.pair_id || null,
-      card_id: payload.cardId || payload.card_id,
-      user_id: userId,
-      swipe: payload.userSwipe || payload.swipe || 'left',
-      matched: !!payload.matched,
-      timestamp: payload.timestamp || new Date().toISOString(),
-    };
-  }
+  const commonPairId = pairId || payload.pair_id || null;
 
-  return {
-    ...payload,
-    pair_id: pairId || payload.pair_id || null,
-  };
+  switch (store) {
+    case 'trail_entries':
+      return {
+        id: payload.id || `t-${Date.now()}`,
+        pair_id: commonPairId,
+        type: payload.type || 'moment',
+        title: payload.title,
+        description: payload.description || null,
+        image_url: payload.imageUrl || payload.image_url || null,
+        date: payload.date || new Date().toISOString(),
+        partner: payload.partner || null,
+        likes_count: payload.likesCount ?? payload.likes_count ?? 0,
+        tags: payload.tags || [],
+        countdown_target: payload.countdownTarget || payload.countdown_target || null,
+        location: payload.location || null,
+      };
+
+    case 'spark_prompts':
+      return {
+        id: payload.id,
+        pair_id: commonPairId,
+        date: payload.date || new Date().toISOString().split('T')[0],
+        question: payload.question,
+        category: payload.category || null,
+        user_answer: payload.userAnswer || payload.user_answer || null,
+        partner_answer: payload.partnerAnswer || payload.partner_answer || null,
+        revealed: !!payload.revealed,
+        answered_at: payload.answeredAt || payload.answered_at || null,
+        source: payload.source || 'static',
+      };
+
+    case 'someday_capsules':
+      return {
+        id: payload.id,
+        pair_id: commonPairId,
+        title: payload.title,
+        unlock_date: payload.unlockDate || payload.unlock_date || new Date().toISOString(),
+        content: payload.content || null,
+        media_type: payload.mediaType || payload.media_type || 'text',
+        media_url: payload.mediaUrl || payload.media_url || null,
+        sealed_by: payload.sealedBy || payload.sealed_by || userId,
+        is_unlocked: !!(payload.isUnlocked ?? payload.is_unlocked),
+        is_event_scoped: !!(payload.isEventScoped ?? payload.is_event_scoped),
+        event_name: payload.eventName || payload.event_name || null,
+      };
+
+    case 'pick_cards':
+      return {
+        id: payload.id,
+        pair_id: commonPairId,
+        date: payload.date || new Date().toISOString().split('T')[0],
+        deck: payload.deck || 'food',
+        title: payload.title,
+        description: payload.description || null,
+        image: payload.image || null,
+        tags: payload.tags || [],
+        rating: payload.rating || null,
+        source: payload.source || 'static',
+      };
+
+    case 'pick_swipes':
+      return {
+        id: payload.id || `ps-${userId}-${payload.cardId || payload.card_id}`,
+        pair_id: commonPairId,
+        card_id: payload.cardId || payload.card_id,
+        user_id: userId,
+        swipe: payload.userSwipe || payload.swipe || 'left',
+        matched: !!payload.matched,
+        timestamp: payload.timestamp || new Date().toISOString(),
+      };
+
+    case 'nudges':
+      return {
+        id: payload.id,
+        pair_id: commonPairId,
+        sender: payload.sender || userId,
+        emoji: payload.emoji || '❤️',
+        label: payload.label || 'Thinking of you',
+        timestamp: payload.timestamp || new Date().toISOString(),
+        viewed: !!payload.viewed,
+      };
+
+    default:
+      return {
+        ...payload,
+        pair_id: commonPairId,
+      };
+  }
 }
 
 // Background sync runner - fail-safe & zero console noise
