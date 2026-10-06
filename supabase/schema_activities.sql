@@ -4,6 +4,13 @@
 alter table profiles add column if not exists location text;
 alter table profiles add column if not exists currency text default 'USD';
 
+-- Cascading user delete rules for pairs and user references
+alter table pairs drop constraint if exists pairs_created_by_fkey;
+alter table pairs add constraint pairs_created_by_fkey foreign key (created_by) references auth.users(id) on delete cascade;
+
+alter table pairs drop constraint if exists pairs_partner_id_fkey;
+alter table pairs add constraint pairs_partner_id_fkey foreign key (partner_id) references auth.users(id) on delete set null;
+
 -- Helper used by policies
 create or replace function is_pair_member(check_pair_id uuid)
 returns boolean language sql security definer set search_path = '' as $$
@@ -70,6 +77,8 @@ create table if not exists someday_capsules (
 );
 alter table someday_capsules alter column pair_id drop not null;
 alter table someday_capsules alter column sealed_by drop not null;
+alter table someday_capsules drop constraint if exists someday_capsules_sealed_by_fkey;
+alter table someday_capsules add constraint someday_capsules_sealed_by_fkey foreign key (sealed_by) references auth.users(id) on delete set null;
 
 create table if not exists pick_cards (
   id text primary key,
@@ -97,6 +106,8 @@ create table if not exists pick_swipes (
 alter table pick_swipes drop constraint if exists pick_swipes_card_id_fkey;
 alter table pick_swipes alter column pair_id drop not null;
 alter table pick_swipes alter column user_id drop not null;
+alter table pick_swipes drop constraint if exists pick_swipes_user_id_fkey;
+alter table pick_swipes add constraint pick_swipes_user_id_fkey foreign key (user_id) references auth.users(id) on delete cascade;
 
 create table if not exists nudges (
   id text primary key,
@@ -109,6 +120,8 @@ create table if not exists nudges (
 );
 alter table nudges alter column pair_id drop not null;
 alter table nudges alter column sender drop not null;
+alter table nudges drop constraint if exists nudges_sender_fkey;
+alter table nudges add constraint nudges_sender_fkey foreign key (sender) references auth.users(id) on delete cascade;
 
 -- Enable RLS and permissive policies for pair activities
 do $$
