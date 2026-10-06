@@ -282,6 +282,7 @@ export default function PickTab() {
                 <img
                   src={currentCard.image || FALLBACK_DECK_IMAGES[activeDeck] || FALLBACK_DECK_IMAGES.food}
                   alt={currentCard.title}
+                  referrerPolicy="no-referrer"
                   className="w-full h-full object-cover pointer-events-none"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src = FALLBACK_DECK_IMAGES[activeDeck] || FALLBACK_DECK_IMAGES.food;
@@ -385,7 +386,7 @@ export default function PickTab() {
               </div>
 
               <div className="bg-[#372A3E] border border-[#FF8966] rounded-3xl p-4 shadow-xl text-left">
-                <img src={matchCard.image} alt={matchCard.title} className="w-full h-40 object-cover rounded-2xl mb-3" />
+                <img src={matchCard.image || FALLBACK_DECK_IMAGES[activeDeck] || FALLBACK_DECK_IMAGES.food} alt={matchCard.title} referrerPolicy="no-referrer" className="w-full h-40 object-cover rounded-2xl mb-3" />
                 <h3 className="text-lg font-bold text-[#F6EFE9]">{matchCard.title}</h3>
                 <p className="text-xs text-[#C9B3D1]">{matchCard.description}</p>
               </div>
