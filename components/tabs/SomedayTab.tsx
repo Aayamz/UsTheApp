@@ -54,7 +54,12 @@ export default function SomedayTab() {
     loadCapsules();
     let cleanup: (() => void) | undefined;
     syncSomedayCapsules((updated) => {
-      setCapsules(updated);
+      setCapsules((prev) => {
+        const currentJson = JSON.stringify(prev);
+        const updatedJson = JSON.stringify(updated);
+        if (currentJson === updatedJson) return prev;
+        return updated;
+      });
       setLoading(false);
     }).then((unsub) => {
       cleanup = unsub;
@@ -180,8 +185,9 @@ export default function SomedayTab() {
               <motion.div
                 key={item.id}
                 layout
-                initial={{ opacity: 0, y: 15 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
                 className={`relative overflow-hidden border rounded-3xl p-5 shadow-xl transition-all ${
                   item.isUnlocked
                     ? 'bg-gradient-to-b from-[#372A3E] to-[#2A1B30] border-[#FF8966]/40'

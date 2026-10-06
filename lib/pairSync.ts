@@ -29,7 +29,7 @@ let globalChannel: any = null;
 let currentPairId: string | null = null;
 
 // ----------------------------------------------------
-// FETCH & SAVE HELPERS WITH LOCAL + REMOTE STATE MERGING
+// FETCH & SAVE HELPERS WITH CANONICAL PAIR DEDUPLICATION
 // ----------------------------------------------------
 
 export async function fetchAndSaveTrail(pairId: string) {
@@ -82,12 +82,9 @@ export async function fetchAndSaveTrail(pairId: string) {
 
 export async function fetchAndSaveSpark(pairId: string) {
   const db = await getDB();
-  const existingLocal = await db.getAll('spark_prompts');
-  const localMap = new Map(existingLocal.map((e) => [e.id, e]));
-
   const { data: authData } = await supabase.auth.getUser();
   const userId = authData?.user?.id;
-  if (!userId) return Array.from(localMap.values());
+  if (!userId) return [];
 
   const { data: pair } = await supabase
     .from('pairs')
@@ -105,8 +102,11 @@ export async function fetchAndSaveSpark(pairId: string) {
 
   if (error) console.error('Error fetching spark prompts:', error);
 
-  if (remote) {
-    remote.forEach((r) => {
+  const dateMap = new Map<string, SparkPrompt>();
+
+  if (remote && remote.length > 0) {
+    for (const r of remote) {
+      const canonicalId = `s-${pairId}-${r.date}`;
       const myAnswer = isCreator ? r.user_answer : r.partner_answer;
       const partnerAnswer = isCreator ? r.partner_answer : r.user_answer;
 
@@ -114,20 +114,23 @@ export async function fetchAndSaveSpark(pairId: string) {
       const isPartnerAnswered = Boolean(partnerAnswer);
       const isRevealed = Boolean(r.revealed || (isUserAnswered && isPartnerAnswered));
 
-      localMap.set(r.id, {
-        id: r.id,
-        date: r.date,
-        question: r.question,
-        category: r.category || 'Connection',
-        userAnswer: myAnswer || undefined,
-        partnerAnswer: partnerAnswer || undefined,
-        revealed: isRevealed,
-        answeredAt: r.answered_at || undefined,
-      });
-    });
+      const existing = dateMap.get(r.date);
+      if (!existing || (!existing.userAnswer && myAnswer) || r.id === canonicalId) {
+        dateMap.set(r.date, {
+          id: canonicalId,
+          date: r.date,
+          question: r.question,
+          category: r.category || 'Connection',
+          userAnswer: myAnswer || undefined,
+          partnerAnswer: partnerAnswer || undefined,
+          revealed: isRevealed,
+          answeredAt: r.answered_at || undefined,
+        });
+      }
+    }
   }
 
-  const merged = Array.from(localMap.values());
+  const merged = Array.from(dateMap.values());
   merged.sort((a, b) => (a.date < b.date ? 1 : -1));
 
   for (const item of merged) {
@@ -336,15 +339,12 @@ export async function startGlobalPairSync(onNudgeReceived?: (nudge: NudgeRecord)
     fetchAndSaveNudges(currentPairId).catch(() => {});
   };
 
-  // Initial load
   refreshAll();
 
-  // Auto-polling loop (every 3s) guarantees instant live sync across accounts with zero tab switching
   const pollInterval = setInterval(() => {
     refreshAll();
   }, 3000);
 
-  // Broad WebSocket listeners for the active pair
   const channelName = `rt-global-${pairId}`;
   const channel = supabase.channel(channelName);
 
@@ -473,10 +473,13 @@ export async function submitSparkAnswer(promptId: string, answerText: string): P
 
   const isCreator = pair?.created_by === userId;
 
+  const dateStr = new Date().toISOString().split('T')[0];
+  const canonicalId = `s-${pairId}-${dateStr}`;
+
   const { data: existing } = await supabase
     .from('spark_prompts')
     .select('*')
-    .eq('id', promptId)
+    .eq('id', canonicalId)
     .maybeSingle();
 
   let newUserAnswer = isCreator ? answerText : existing?.user_answer || null;
@@ -484,11 +487,11 @@ export async function submitSparkAnswer(promptId: string, answerText: string): P
   let isRevealed = Boolean(newUserAnswer && newPartnerAnswer);
 
   const payload = {
-    id: promptId,
+    id: canonicalId,
     pair_id: pairId,
-    date: existing?.date || new Date().toISOString().split('T')[0],
-    question: existing?.question || 'What made you smile today?',
-    category: existing?.category || 'Intimacy',
+    date: dateStr,
+    question: existing?.question || 'What is a small detail about me that you noticed recently?',
+    category: existing?.category || 'Connection',
     user_answer: newUserAnswer,
     partner_answer: newPartnerAnswer,
     revealed: isRevealed,
@@ -506,12 +509,12 @@ export async function submitSparkAnswer(promptId: string, answerText: string): P
   }
 
   const result: SparkPrompt = {
-    id: promptId,
+    id: canonicalId,
     date: payload.date,
     question: payload.question,
     category: payload.category,
-    userAnswer: answerText,
-    partnerAnswer: isCreator ? (existing?.partner_answer || undefined) : (existing?.user_answer || undefined),
+    userAnswer: isCreator ? newUserAnswer || undefined : newPartnerAnswer || undefined,
+    partnerAnswer: isCreator ? newPartnerAnswer || undefined : newUserAnswer || undefined,
     revealed: isRevealed,
     answeredAt: payload.answered_at,
   };
