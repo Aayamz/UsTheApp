@@ -1,11 +1,10 @@
--- Run after schema.sql. Adds the activity tables that lib/sync.ts already
--- expects, all scoped to a pair via RLS, plus location/currency on profiles
--- for personalizing AI-generated content.
+-- Run after schema.sql. Adds the activity tables that lib/sync.ts expects,
+-- all scoped to a pair via RLS, plus location/currency on profiles.
 
 alter table profiles add column if not exists location text;
 alter table profiles add column if not exists currency text default 'USD';
 
--- Helper used by every policy below: is the current user in this pair?
+-- Helper used by policies
 create or replace function is_pair_member(check_pair_id uuid)
 returns boolean language sql security definer set search_path = '' as $$
   select exists (
@@ -15,7 +14,7 @@ $$;
 
 create table if not exists trail_entries (
   id text primary key,
-  pair_id uuid references pairs not null,
+  pair_id uuid references pairs,
   type text not null,
   title text not null,
   description text,
@@ -28,10 +27,11 @@ create table if not exists trail_entries (
   location text,
   created_at timestamptz default now()
 );
+alter table trail_entries alter column pair_id drop not null;
 
 create table if not exists spark_prompts (
   id text primary key,
-  pair_id uuid references pairs not null,
+  pair_id uuid references pairs,
   date date not null,
   question text not null,
   category text,
@@ -39,12 +39,13 @@ create table if not exists spark_prompts (
   partner_answer text,
   revealed boolean default false,
   answered_at timestamptz,
-  source text default 'static' -- 'static' | 'ai'
+  source text default 'static'
 );
+alter table spark_prompts alter column pair_id drop not null;
 
 create table if not exists someday_capsules (
   id text primary key,
-  pair_id uuid references pairs not null,
+  pair_id uuid references pairs,
   title text not null,
   unlock_date timestamptz not null,
   content text,
@@ -56,12 +57,13 @@ create table if not exists someday_capsules (
   event_name text,
   created_at timestamptz default now()
 );
+alter table someday_capsules alter column pair_id drop not null;
 
 create table if not exists pick_cards (
   id text primary key,
-  pair_id uuid references pairs not null,
+  pair_id uuid references pairs,
   date date not null,
-  deck text not null, -- 'food' | 'movie' | 'plan' | 'travel'
+  deck text not null,
   title text not null,
   description text,
   image text,
@@ -69,26 +71,29 @@ create table if not exists pick_cards (
   rating text,
   source text default 'static'
 );
+alter table pick_cards alter column pair_id drop not null;
 
 create table if not exists pick_swipes (
   id text primary key,
-  pair_id uuid references pairs not null,
+  pair_id uuid references pairs,
   card_id text references pick_cards,
   user_id uuid references auth.users not null,
-  swipe text not null, -- 'left' | 'right'
+  swipe text not null,
   matched boolean default false,
   timestamp timestamptz default now()
 );
+alter table pick_swipes alter column pair_id drop not null;
 
 create table if not exists nudges (
   id text primary key,
-  pair_id uuid references pairs not null,
+  pair_id uuid references pairs,
   sender uuid references auth.users not null,
   emoji text,
   label text,
   timestamp timestamptz default now(),
   viewed boolean default false
 );
+alter table nudges alter column pair_id drop not null;
 
 -- Enable RLS and permissive policies for pair activities
 do $$
