@@ -237,27 +237,40 @@ export default function ProfileDrawer({
                 Share this invite link with your partner or friends to pair up and connect instantly.
               </p>
 
-              {inviteUrl && (
-                <div className="flex items-center gap-2">
-                  {typeof navigator !== 'undefined' && 'share' in navigator && (
-                    <button
-                      onClick={handleShareLink}
-                      className="flex-1 py-2 px-3 bg-[#FF8966] text-[#1F1324] hover:bg-[#FF8966]/90 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                    >
-                      <Share2 className="w-3.5 h-3.5" />
-                      <span>Share</span>
-                    </button>
-                  )}
+              <div className="flex flex-col gap-2">
+                {inviteUrl ? (
+                  <div className="flex items-center gap-2">
+                    {typeof navigator !== 'undefined' && 'share' in navigator && (
+                      <button
+                        onClick={handleShareLink}
+                        className="flex-1 py-2 px-3 bg-[#FF8966] text-[#1F1324] hover:bg-[#FF8966]/90 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>Share</span>
+                      </button>
+                    )}
 
-                  <button
-                    onClick={handleCopyLink}
-                    className="flex-1 py-2 px-3 bg-[#372A3E] border border-[#4F3C59] text-[#F6EFE9] hover:bg-[#4F3C59]/50 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#FF8966]" />}
-                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-                  </button>
-                </div>
-              )}
+                    <button
+                      onClick={handleCopyLink}
+                      className="flex-1 py-2 px-3 bg-[#372A3E] border border-[#4F3C59] text-[#F6EFE9] hover:bg-[#4F3C59]/50 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#FF8966]" />}
+                      <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                    </button>
+                  </div>
+                ) : null}
+
+                <button
+                  onClick={() => {
+                    onClose();
+                    router.push('/invite');
+                  }}
+                  className="w-full py-2 px-3 bg-[#372A3E]/80 border border-[#4F3C59] text-[#F6EFE9] hover:bg-[#372A3E] font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-[#FF8966]" />
+                  <span>Open Full Invite Page</span>
+                </button>
+              </div>
             </div>
 
             {/* Group / Space Switcher */}

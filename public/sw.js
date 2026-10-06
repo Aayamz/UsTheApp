@@ -1,16 +1,13 @@
 // Workbox Service Worker for U& Couples PWA
 importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');
 
+self.skipWaiting();
+
 if (workbox) {
+  workbox.core.clientsClaim();
   workbox.setConfig({ debug: false });
 
-  // Precache app shell static files
-  workbox.precaching.precacheAndRoute([
-    { url: '/', revision: 'v2' },
-    { url: '/icon.svg', revision: 'v2' },
-  ]);
-
-  // Stale-While-Revalidate for static assets (excluding dynamic Next.js HMR chunks)
+  // Stale-While-Revalidate for static assets (styles, scripts, fonts)
   workbox.routing.registerRoute(
     ({ request, url }) =>
       (request.destination === 'style' ||
@@ -37,17 +34,10 @@ if (workbox) {
     })
   );
 
-  // Network-first with fallback to cache for page navigation
+  // Network-only for page navigation to ensure fresh deployments are loaded immediately
   workbox.routing.registerRoute(
     ({ request }) => request.mode === 'navigate',
-    new workbox.strategies.NetworkFirst({
-      cacheName: 'pages',
-      plugins: [
-        new workbox.expiration.ExpirationPlugin({
-          maxEntries: 10,
-        }),
-      ],
-    })
+    new workbox.strategies.NetworkOnly()
   );
 }
 

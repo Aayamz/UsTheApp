@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ucbcjjrtexvlenoglorw.supabase.co';
 
 export default function GoogleSignInButton({
   next = '/',
@@ -14,35 +15,24 @@ export default function GoogleSignInButton({
 }) {
   const [loading, setLoading] = useState(false);
 
-  const handleSignIn = async () => {
+  const handleSignIn = () => {
     setLoading(true);
 
-    if (inviteCode && typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('pending_invite_code', inviteCode);
-        document.cookie = `pending_invite_code=${inviteCode}; path=/; max-age=3600; SameSite=Lax`;
-      } catch (e) {
-        console.error('Error saving pending invite code:', e);
+    if (typeof window !== 'undefined') {
+      if (inviteCode) {
+        try {
+          localStorage.setItem('pending_invite_code', inviteCode);
+          document.cookie = `pending_invite_code=${inviteCode}; path=/; max-age=3600; SameSite=Lax`;
+        } catch (e) {
+          console.error('Error saving pending invite code:', e);
+        }
       }
-    }
 
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo,
-        skipBrowserRedirect: true,
-      },
-    });
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const authUrl = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
 
-    if (error) {
-      console.error('OAuth sign-in failed:', error.message);
-      setLoading(false);
-      return;
-    }
-
-    if (data?.url) {
-      window.location.href = data.url;
+      // Synchronous navigation -- executes directly on user gesture, bypassing iOS WebKit gesture expiration
+      window.location.href = authUrl;
     }
   };
 
@@ -59,4 +49,5 @@ export default function GoogleSignInButton({
     </motion.div>
   );
 }
+
 

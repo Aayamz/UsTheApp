@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Haptics } from '@/lib/haptics';
 import Logo from '@/components/Logo';
@@ -20,6 +21,7 @@ interface TopHeaderBarProps {
   activeSpaceName: string;
   onlineCount: number;
   onOpenProfile: () => void;
+  onOpenInvite?: () => void;
 }
 
 export default function TopHeaderBar({
@@ -27,7 +29,19 @@ export default function TopHeaderBar({
   activeSpaceName,
   onlineCount,
   onOpenProfile,
+  onOpenInvite,
 }: TopHeaderBarProps) {
+  const router = useRouter();
+
+  const handleInviteClick = () => {
+    Haptics.lightTap();
+    if (onOpenInvite) {
+      onOpenInvite();
+    } else {
+      router.push('/invite');
+    }
+  };
+
   return (
     <header className="sticky top-0 z-40 bg-[#1F1324]/95 backdrop-blur-md border-b border-[#4F3C59]/50 px-4 py-2 flex items-center justify-between safe-pt max-w-md mx-auto w-full">
       {/* Brand Icon Logo */}
@@ -53,10 +67,7 @@ export default function TopHeaderBar({
       <div className="flex items-center gap-2">
         {/* Quick Invite Button */}
         <button
-          onClick={() => {
-            Haptics.lightTap();
-            onOpenProfile();
-          }}
+          onClick={handleInviteClick}
           className="flex items-center gap-1 text-[11px] font-bold text-[#FF8966] bg-[#FF8966]/15 hover:bg-[#FF8966]/25 border border-[#FF8966]/40 px-2.5 py-1 rounded-full transition-all active:scale-95 cursor-pointer"
           title="Invite partner or friends"
         >
@@ -88,3 +99,4 @@ export default function TopHeaderBar({
     </header>
   );
 }
+

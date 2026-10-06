@@ -12,10 +12,19 @@ export default function ServiceWorkerRegister() {
           .register('/sw.js')
           .then((reg) => {
             console.log('U& Service Worker registered:', reg.scope);
+            reg.update();
           })
           .catch((err) => {
             console.log('U& Service Worker registration failed:', err);
           });
+      });
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
       });
     } else {
       // In development, unregister any active service worker to prevent Turbopack chunk caching conflicts
