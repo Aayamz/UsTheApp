@@ -13,7 +13,5 @@ export default async function Home() {
 
   if (!user) redirect('/login');
 
-  await ensurePairForUser(supabase, user.id);
-
   return <NavigationShell />;
 }
