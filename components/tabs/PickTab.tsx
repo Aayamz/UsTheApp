@@ -48,6 +48,14 @@ export default function PickTab() {
         swipeMap[s.cardId] = s;
       });
 
+      // Clear any stuck malformed legacy items from sync_queue to prevent console errors
+      const syncItems = await db.getAll('sync_queue');
+      for (const item of syncItems) {
+        if (!item.payload || (!item.payload.pair_id && !item.payload.cardId && !item.payload.card_id)) {
+          await db.delete('sync_queue', item.id);
+        }
+      }
+
       setCards(allCards);
       setSwipes(swipeMap);
 
@@ -151,6 +159,13 @@ export default function PickTab() {
 
   const [generatingAi, setGeneratingAi] = useState(false);
 
+  const FALLBACK_DECK_IMAGES: Record<string, string> = {
+    food: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&auto=format&fit=crop&q=80',
+    movie: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800&auto=format&fit=crop&q=80',
+    plan: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80',
+    travel: 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&auto=format&fit=crop&q=80',
+  };
+
   const handleGenerateAiCards = async () => {
     Haptics.lightTap();
     setGeneratingAi(true);
@@ -164,13 +179,14 @@ export default function PickTab() {
       if (data.pick_cards && data.pick_cards.length > 0) {
         const db = await getDB();
         for (const card of data.pick_cards) {
+          const deckKey = (card.deck || 'food') as DeckType;
           const cardObj: PickCard = {
-            id: card.id,
-            deck: card.deck,
+            id: card.id || `p-${deckKey}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            deck: deckKey,
             title: card.title,
             description: card.description,
-            image: card.image,
-            tags: card.tags,
+            image: card.image || FALLBACK_DECK_IMAGES[deckKey] || FALLBACK_DECK_IMAGES.food,
+            tags: card.tags || ['AI Suggested'],
             rating: '4.9 ★',
           };
           await db.put('pick_cards', cardObj);
