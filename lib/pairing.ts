@@ -39,6 +39,26 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     authUser?.user?.user_metadata?.name ||
     (userEmail ? userEmail.split('@')[0] : 'User');
 
+  // 1. If user profile already points to a valid pair, keep using it!
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, pair_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profile?.pair_id) {
+    const { data: existingPair } = await supabase
+      .from('pairs')
+      .select('*')
+      .eq('id', profile.pair_id)
+      .maybeSingle();
+
+    if (existingPair) {
+      return existingPair;
+    }
+  }
+
+  // 2. Search for any pair where user is creator or partner
   const { data: pairs } = await supabase
     .from('pairs')
     .select('*')
@@ -46,7 +66,11 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     .order('created_at', { ascending: false });
 
   if (pairs && pairs.length > 0) {
-    const activePair = pairs.find((p) => p.partner_id !== null) || pairs[0];
+    // Prefer paired space (where partner_id is not null) over empty single space
+    const activePair =
+      pairs.find((p) => p.partner_id !== null) ||
+      pairs.find((p) => p.created_by === userId) ||
+      pairs[0];
 
     await supabase.from('profiles').upsert({
       id: userId,
@@ -56,7 +80,7 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     return activePair;
   }
 
-  // Create new pair if none exists
+  // 3. Create new pair if none exists
   const { data: created, error } = await supabase
     .from('pairs')
     .insert({ created_by: userId })
