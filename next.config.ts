@@ -5,6 +5,7 @@ const withPWA = require('next-pwa')({
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
+  cleanupOutdatedCaches: true,
   runtimeCaching: [
     {
       // HTML page loads must always hit the network -- this app is

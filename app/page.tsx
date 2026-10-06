@@ -3,6 +3,8 @@ import NavigationShell from '@/components/NavigationShell';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { ensurePairForUser } from '@/lib/pairing';
 
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   const supabase = await createSupabaseServerClient();
   const {

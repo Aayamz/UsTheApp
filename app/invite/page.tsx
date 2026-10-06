@@ -4,6 +4,8 @@ import { ensurePairForUser } from '@/lib/pairing';
 import InviteWaiting from '@/components/auth/InviteWaiting';
 import Logo from '@/components/Logo';
 
+export const dynamic = 'force-dynamic';
+
 export default async function InvitePage() {
   const supabase = await createSupabaseServerClient();
   const {

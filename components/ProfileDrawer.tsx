@@ -101,8 +101,16 @@ export default function ProfileDrawer({
   const handleSignOut = async () => {
     Haptics.lightTap();
     setLoggingOut(true);
-    await supabase.auth.signOut();
-    router.push('/login');
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Sign out error (navigating away regardless):', err);
+    } finally {
+      // Hard navigation, not router.push -- this guarantees a full reload
+      // that re-reads auth state fresh, instead of a soft client-side
+      // transition that can be served from a stale cache.
+      window.location.href = '/login';
+    }
   };
 
   return (

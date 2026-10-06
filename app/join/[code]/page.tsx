@@ -5,6 +5,8 @@ import GoogleSignInButton from '@/components/auth/GoogleSignInButton';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
 
+export const dynamic = 'force-dynamic';
+
 export default async function JoinPage({
   params,
 }: {

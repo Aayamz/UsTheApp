@@ -1,6 +1,8 @@
 import GoogleSignInButton from '@/components/auth/GoogleSignInButton';
 import Logo from '@/components/Logo';
 
+export const dynamic = 'force-dynamic';
+
 export default async function LoginPage({
   searchParams,
 }: {
