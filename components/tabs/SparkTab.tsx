@@ -76,6 +76,10 @@ export default function SparkTab() {
     try {
       const res = await fetch('/api/generate-daily', { method: 'POST' });
       const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.error || 'Failed to generate AI content');
+        return;
+      }
       if (data.spark) {
         const newPrompt: SparkPrompt = {
           id: data.spark.id,
@@ -88,8 +92,9 @@ export default function SparkTab() {
         await db.put('spark_prompts', newPrompt);
         setPrompts((prev) => [newPrompt, ...prev.filter((p) => p.date !== newPrompt.date)]);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('AI generation failed:', e);
+      alert(e.message || 'AI generation failed');
     } finally {
       setGeneratingAi(false);
     }

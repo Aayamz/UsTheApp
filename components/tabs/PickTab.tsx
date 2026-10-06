@@ -157,6 +157,10 @@ export default function PickTab() {
     try {
       const res = await fetch('/api/generate-daily', { method: 'POST' });
       const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.error || 'Failed to generate AI cards');
+        return;
+      }
       if (data.pick_cards && data.pick_cards.length > 0) {
         const db = await getDB();
         for (const card of data.pick_cards) {
@@ -173,8 +177,9 @@ export default function PickTab() {
         }
         await loadDeckData();
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed generating AI cards:', e);
+      alert(e.message || 'AI generation failed');
     } finally {
       setGeneratingAi(false);
     }

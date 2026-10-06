@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { createSupabaseAdminClient } from '@/lib/supabase-admin';
 import { ensurePairForUser } from '@/lib/pairing';
 
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
@@ -7,7 +8,7 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 async function askGroq(prompt: string) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    throw new Error('GROQ_API_KEY is not set');
+    throw new Error('GROQ_API_KEY environment variable is not configured in Vercel settings.');
   }
 
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -25,11 +26,16 @@ async function askGroq(prompt: string) {
   });
 
   if (!res.ok) {
-    throw new Error(`Groq API error: ${res.status} ${await res.text()}`);
+    const errText = await res.text();
+    throw new Error(`Groq API returned HTTP ${res.status}: ${errText}`);
   }
 
   const data = await res.json();
-  return JSON.parse(data.choices[0].message.content);
+  const rawContent = data.choices?.[0]?.message?.content;
+  if (!rawContent) {
+    throw new Error('Empty response from Groq API');
+  }
+  return JSON.parse(rawContent);
 }
 
 function buildPrompt() {
@@ -61,22 +67,26 @@ export async function POST() {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized: Please sign in.' }, { status: 401 });
     }
 
     const pair = await ensurePairForUser(supabase, user.id);
     const today = new Date().toISOString().split('T')[0];
 
-    // Check if Groq API key exists
     if (!process.env.GROQ_API_KEY) {
       return NextResponse.json(
         {
-          error: 'GROQ_API_KEY is not configured in environment variables.',
+          error: 'GROQ_API_KEY is missing from Vercel environment variables. Please add GROQ_API_KEY in Vercel settings and redeploy.',
           requiresKey: true,
         },
         { status: 400 }
       );
     }
+
+    // Use admin client if service role key exists to bypass any RLS locks
+    const dbClient = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? createSupabaseAdminClient()
+      : supabase;
 
     const aiContent = await askGroq(buildPrompt());
 
@@ -90,7 +100,10 @@ export async function POST() {
       source: 'ai',
     };
 
-    await supabase.from('spark_prompts').upsert(sparkRow);
+    const { error: sparkErr } = await dbClient.from('spark_prompts').upsert(sparkRow);
+    if (sparkErr) {
+      console.error('Error saving spark prompt to Supabase:', sparkErr.message);
+    }
 
     const fallbackImages: Record<string, string> = {
       food: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&auto=format&fit=crop&q=80',
@@ -115,7 +128,10 @@ export async function POST() {
     });
 
     if (cardRows.length > 0) {
-      await supabase.from('pick_cards').upsert(cardRows);
+      const { error: cardsErr } = await dbClient.from('pick_cards').upsert(cardRows);
+      if (cardsErr) {
+        console.error('Error saving pick cards to Supabase:', cardsErr.message);
+      }
     }
 
     return NextResponse.json({
