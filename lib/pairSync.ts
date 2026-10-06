@@ -125,13 +125,40 @@ export async function fetchAndSaveSpark(pairId: string) {
 
   const isCreator = pair?.created_by === userId;
 
-  const { data: remote, error } = await supabase
+  let { data: remote, error } = await supabase
     .from('spark_prompts')
     .select('*')
     .eq('pair_id', pairId)
     .order('date', { ascending: false });
 
   if (error) console.error('Error fetching spark prompts:', error);
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const hasToday = remote?.some((r) => r.date === todayStr);
+
+  if (!hasToday && pairId) {
+    const canonicalId = `s-${pairId}-${todayStr}`;
+    const defaultSparkRow = {
+      id: canonicalId,
+      pair_id: pairId,
+      date: todayStr,
+      question: 'What is one small detail about me that you noticed recently?',
+      category: 'Connection & Joy',
+      user_answer: null,
+      partner_answer: null,
+      revealed: false,
+      answered_at: null,
+      source: 'default',
+    };
+
+    const { error: sparkUpsertErr } = await supabase
+      .from('spark_prompts')
+      .upsert(defaultSparkRow, { onConflict: 'id' });
+
+    if (!sparkUpsertErr) {
+      remote = [defaultSparkRow, ...(remote || [])];
+    }
+  }
 
   const dateMap = new Map<string, SparkPrompt>();
 
@@ -395,49 +422,39 @@ export async function startGlobalPairSync(onNudgeReceived?: (nudge: NudgeRecord)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'trail_entries' },
-      (payload: any) => {
-        if (payload.new?.pair_id === pairId || payload.old?.pair_id === pairId) {
-          fetchAndSaveTrail(pairId).catch(() => {});
-        }
+      () => {
+        fetchAndSaveTrail(pairId).catch(() => {});
       }
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'spark_prompts' },
       (payload: any) => {
-        if (payload.new?.pair_id === pairId || payload.old?.pair_id === pairId) {
-          if (payload.new && payload.new.revealed) {
-            Haptics.sparkReveal();
-          }
-          fetchAndSaveSpark(pairId).catch(() => {});
+        if (payload.new && payload.new.revealed) {
+          Haptics.sparkReveal();
         }
+        fetchAndSaveSpark(pairId).catch(() => {});
       }
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'someday_capsules' },
-      (payload: any) => {
-        if (payload.new?.pair_id === pairId || payload.old?.pair_id === pairId) {
-          fetchAndSaveSomeday(pairId).catch(() => {});
-        }
+      () => {
+        fetchAndSaveSomeday(pairId).catch(() => {});
       }
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'pick_swipes' },
       (payload: any) => {
-        if (payload.new?.pair_id === pairId || payload.old?.pair_id === pairId) {
-          fetchAndSavePickSwipes(pairId, payload).catch(() => {});
-        }
+        fetchAndSavePickSwipes(pairId, payload).catch(() => {});
       }
     )
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'nudges' },
       (payload: any) => {
-        if (payload.new?.pair_id === pairId) {
-          fetchAndSaveNudges(pairId, payload.new, onNudgeReceived).catch(() => {});
-        }
+        fetchAndSaveNudges(pairId, payload.new, onNudgeReceived).catch(() => {});
       }
     )
     .subscribe();

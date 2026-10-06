@@ -140,15 +140,8 @@ export async function syncPendingMutations() {
       return;
     }
 
-    let pairId: string | null = null;
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('pair_id')
-        .eq('id', userId)
-        .maybeSingle();
-      pairId = profile?.pair_id || null;
-    } catch {}
+    const { getActivePairId } = await import('./pairSync');
+    const pairId = await getActivePairId();
 
     for (const item of pending) {
       try {

@@ -49,13 +49,7 @@ export default function TrailTab() {
     loadTrailData();
     let cleanup: (() => void) | undefined;
     syncTrailEntries((updated) => {
-      setEntries((prev) => {
-        // Prevent unnecessary state updates if JSON is unchanged
-        const currentJson = JSON.stringify(prev);
-        const updatedJson = JSON.stringify(updated);
-        if (currentJson === updatedJson) return prev;
-        return updated;
-      });
+      setEntries(updated);
       setLoading(false);
     }).then((unsub) => {
       cleanup = unsub;

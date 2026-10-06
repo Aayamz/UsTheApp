@@ -63,7 +63,15 @@ export default function SparkTab() {
   }, []);
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const activePrompt = prompts.find((p) => p.date === todayStr) || prompts[0];
+  const defaultPrompt: SparkPrompt = {
+    id: `s-${todayStr}`,
+    date: todayStr,
+    question: 'What is one small detail about me that you noticed recently?',
+    category: 'Connection & Joy',
+    revealed: false,
+  };
+
+  const activePrompt = prompts.find((p) => p.date === todayStr) || prompts[0] || defaultPrompt;
 
   const handleSubmitAnswer = async (e: React.FormEvent) => {
     e.preventDefault();
