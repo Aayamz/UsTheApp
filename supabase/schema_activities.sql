@@ -20,7 +20,7 @@ create table if not exists trail_entries (
   description text,
   image_url text,
   date timestamptz not null default now(),
-  partner uuid references auth.users,
+  partner text,
   likes_count int default 0,
   tags text[],
   countdown_target timestamptz,
@@ -28,6 +28,7 @@ create table if not exists trail_entries (
   created_at timestamptz default now()
 );
 alter table trail_entries alter column pair_id drop not null;
+alter table trail_entries alter column partner type text using partner::text;
 
 create table if not exists spark_prompts (
   id text primary key,
@@ -58,6 +59,7 @@ create table if not exists someday_capsules (
   created_at timestamptz default now()
 );
 alter table someday_capsules alter column pair_id drop not null;
+alter table someday_capsules alter column sealed_by drop not null;
 
 create table if not exists pick_cards (
   id text primary key,
@@ -77,23 +79,25 @@ create table if not exists pick_swipes (
   id text primary key,
   pair_id uuid references pairs,
   card_id text references pick_cards,
-  user_id uuid references auth.users not null,
+  user_id uuid references auth.users,
   swipe text not null,
   matched boolean default false,
   timestamp timestamptz default now()
 );
 alter table pick_swipes alter column pair_id drop not null;
+alter table pick_swipes alter column user_id drop not null;
 
 create table if not exists nudges (
   id text primary key,
   pair_id uuid references pairs,
-  sender uuid references auth.users not null,
+  sender uuid references auth.users,
   emoji text,
   label text,
   timestamp timestamptz default now(),
   viewed boolean default false
 );
 alter table nudges alter column pair_id drop not null;
+alter table nudges alter column sender drop not null;
 
 -- Enable RLS and permissive policies for pair activities
 do $$
