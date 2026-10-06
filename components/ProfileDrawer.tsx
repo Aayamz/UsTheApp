@@ -122,8 +122,10 @@ export default function ProfileDrawer({
         if (pair.partner_id) roleMap.set(pair.partner_id, 'partner');
 
         (spaceMembersData || []).forEach((sm) => {
-          memberIds.add(sm.user_id);
-          if (sm.role) roleMap.set(sm.user_id, sm.role);
+          if (sm.user_id !== pair.created_by && sm.user_id !== pair.partner_id) {
+            memberIds.add(sm.user_id);
+            roleMap.set(sm.user_id, sm.role || 'friend');
+          }
         });
 
         const otherMemberIds = Array.from(memberIds).filter((id) => id !== userData.user.id);

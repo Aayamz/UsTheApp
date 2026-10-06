@@ -129,19 +129,20 @@ export default function NavigationShell() {
       // Build GroupSpace items for each active pair
       const spaceItems: GroupSpace[] = [];
       for (const pair of activePairsList) {
-        const { data: friendMembers } = await supabase
+        const { data: spaceMembersData } = await supabase
           .from('space_members')
-          .select('user_id')
-          .eq('space_id', pair.id)
-          .eq('role', 'friend');
+          .select('user_id, role')
+          .eq('space_id', pair.id);
 
-        const friendUserIds = (friendMembers || []).map((fm) => fm.user_id);
-        const hasFriendMembers = friendUserIds.length > 0;
+        // Clean up redundant space_members rows for creator/partner
+        const realFriendUserIds = (spaceMembersData || [])
+          .map((sm) => sm.user_id)
+          .filter((id) => id && id !== pair.created_by && id !== pair.partner_id);
 
         const memberIds = new Set<string>();
         if (pair.created_by) memberIds.add(pair.created_by);
         if (pair.partner_id) memberIds.add(pair.partner_id);
-        friendUserIds.forEach((id) => memberIds.add(id));
+        realFriendUserIds.forEach((id) => memberIds.add(id));
 
         const memberIdArray = Array.from(memberIds);
         const { data: memberProfiles } = await supabase
@@ -161,7 +162,7 @@ export default function NavigationShell() {
         let spaceName = '';
         let spaceType: 'couple' | 'group' = 'couple';
 
-        if (hasFriendMembers || memberIdArray.length >= 3) {
+        if (realFriendUserIds.length > 0 || memberIdArray.length >= 3) {
           spaceType = 'group';
           spaceName = `🎉 Friends Space: ${names.join(', ')}`;
         } else if (memberIdArray.length === 2) {
