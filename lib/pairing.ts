@@ -8,18 +8,25 @@ export async function getMyProfile(supabase: SupabaseClient, userId: string) {
     .maybeSingle();
 
   if (profile?.pair_id) {
-    return profile;
+    const { data: pair } = await supabase
+      .from('pairs')
+      .select('id, partner_id')
+      .eq('id', profile.pair_id)
+      .maybeSingle();
+    if (pair) return { ...profile, pair_id: pair.id };
   }
 
-  // Fallback check: see if user belongs to pairs in pairs table
   const { data: pairs } = await supabase
     .from('pairs')
     .select('id, created_by, partner_id, created_at')
-    .or(`created_by.eq.${userId},partner_id.eq.${userId}`)
-    .order('created_at', { ascending: false });
+    .or(`created_by.eq.${userId},partner_id.eq.${userId}`);
 
   if (pairs && pairs.length > 0) {
-    const activePair = pairs.find((p) => p.partner_id !== null) || pairs[0];
+    const activePair =
+      pairs.find((p) => p.partner_id !== null) ||
+      pairs.find((p) => p.created_by === userId) ||
+      pairs[0];
+
     await supabase.from('profiles').upsert({
       id: userId,
       pair_id: activePair.id,
@@ -39,7 +46,7 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     authUser?.user?.user_metadata?.name ||
     (userEmail ? userEmail.split('@')[0] : 'User');
 
-  // 1. If user profile already points to a valid pair, keep using it!
+  // 1. If user profile already points to a valid pair, use it!
   const { data: profile } = await supabase
     .from('profiles')
     .select('id, pair_id')
@@ -58,17 +65,16 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     }
   }
 
-  // 2. Search for any pair where user is creator or partner
+  // 2. Search for pairs - PREFER PARTNERED PAIRS over empty standalone pairs!
   const { data: pairs } = await supabase
     .from('pairs')
     .select('*')
-    .or(`created_by.eq.${userId},partner_id.eq.${userId}`)
-    .order('created_at', { ascending: false });
+    .or(`created_by.eq.${userId},partner_id.eq.${userId}`);
 
   if (pairs && pairs.length > 0) {
-    // Prefer paired space (where partner_id is not null) over empty single space
     const activePair =
       pairs.find((p) => p.partner_id !== null) ||
+      pairs.find((p) => p.partner_id === userId) ||
       pairs.find((p) => p.created_by === userId) ||
       pairs[0];
 
@@ -142,7 +148,7 @@ export async function joinPairByCode(
     return { pair, role: 'partner' };
   }
 
-  // Option 1: Partner slot is available -> Join as Romantic Partner 💕
+  // Option 1: Partner slot is available -> Join as Partner 💕
   if (!pair.partner_id) {
     const { data: updated, error } = await supabase
       .from('pairs')
@@ -154,6 +160,17 @@ export async function joinPairByCode(
 
     if (!error && updated) {
       await supabase.from('profiles').upsert({ id: userId, pair_id: updated.id, display_name: displayName });
+
+      // Clean up any empty standalone pairs previously created by this user
+      try {
+        await supabase
+          .from('pairs')
+          .delete()
+          .eq('created_by', userId)
+          .is('partner_id', null)
+          .neq('id', updated.id);
+      } catch {}
+
       try {
         await supabase.from('space_members').upsert({
           space_id: updated.id,

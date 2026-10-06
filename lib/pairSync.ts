@@ -12,15 +12,33 @@ export async function getActivePairId(): Promise<string | null> {
     .eq('id', authData.user.id)
     .maybeSingle();
 
-  if (profile?.pair_id) return profile.pair_id;
+  if (profile?.pair_id) {
+    const { data: validPair } = await supabase
+      .from('pairs')
+      .select('id')
+      .eq('id', profile.pair_id)
+      .maybeSingle();
+    if (validPair) return validPair.id;
+  }
 
   const { data: pairs } = await supabase
     .from('pairs')
-    .select('id, partner_id')
-    .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`)
-    .order('created_at', { ascending: false });
+    .select('id, created_by, partner_id')
+    .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`);
 
-  const active = pairs?.find((p) => p.partner_id !== null) || pairs?.[0];
+  if (!pairs || pairs.length === 0) return null;
+
+  const active =
+    pairs.find((p) => p.partner_id !== null) ||
+    pairs.find((p) => p.partner_id === authData.user.id) ||
+    pairs[0];
+
+  if (active) {
+    await supabase
+      .from('profiles')
+      .upsert({ id: authData.user.id, pair_id: active.id });
+  }
+
   return active?.id || null;
 }
 

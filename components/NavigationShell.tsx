@@ -82,14 +82,14 @@ export default function NavigationShell() {
       const { data: userPairs } = await supabase
         .from('pairs')
         .select('id, created_by, partner_id')
-        .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`)
-        .order('created_at', { ascending: false });
+        .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`);
 
       let partnerName: string | null = null;
       let isCreator = true;
 
       const activePair =
         userPairs?.find((p) => p.partner_id !== null) ||
+        userPairs?.find((p) => p.partner_id === authData.user.id) ||
         userPairs?.[0] ||
         null;
 
@@ -138,7 +138,11 @@ export default function NavigationShell() {
         { id: 'g-2', name: '🎉 Group Event Capsules', type: 'group', memberCount: 1 },
       ];
       setSpaces(updatedSpaces);
-      setActiveSpace(updatedSpaces[0]);
+
+      setActiveSpace((prevActive) => {
+        const match = updatedSpaces.find((s) => s.id === prevActive?.id);
+        return match || updatedSpaces[0];
+      });
     };
 
     fetchUserData().catch((e) => console.log('Error fetching user data:', e));
