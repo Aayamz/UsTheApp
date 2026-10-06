@@ -87,7 +87,7 @@ function prepareSupabasePayload(store: string, payload: any, userId: string, pai
 
     case 'pick_swipes':
       return {
-        id: payload.id || `ps-${userId}-${payload.cardId || payload.card_id}`,
+        id: payload.id || `ps-${userId}-${payload.cardId || payload.card_id}-${Date.now().toString(36)}`,
         pair_id: commonPairId,
         card_id: payload.cardId || payload.card_id,
         user_id: userId,
@@ -147,13 +147,13 @@ export async function syncPendingMutations() {
       try {
         if (item.action === 'insert' || item.action === 'update') {
           const payloadToSync = prepareSupabasePayload(item.store, item.payload, userId, pairId);
-          await supabase.from(item.store).upsert(payloadToSync);
+          await supabase.from(item.store).upsert(payloadToSync, { onConflict: 'id' });
         } else if (item.action === 'delete') {
           await supabase.from(item.store).delete().eq('id', item.payload.id);
         }
       } catch {}
 
-      // Always clear item from queue after processing to avoid retrying bad payloads
+      // Always clear item from queue after processing to avoid retrying duplicate payloads
       try {
         await db.delete('sync_queue', item.id);
       } catch {}

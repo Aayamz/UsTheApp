@@ -46,19 +46,23 @@ export default function TrailTab() {
     loadTrailData();
   }, []);
 
-  const handleLike = async (id: string, currentLikes: number) => {
+  const handleLike = async (id: string, currentLikes: number, currentlyLiked?: boolean) => {
     Haptics.lightTap();
-    const updatedLikes = currentLikes + 1;
+    const isLiked = !currentlyLiked;
+    const updatedLikes = isLiked ? currentLikes + 1 : Math.max(0, currentLikes - 1);
 
     // Optimistic UI update
     setEntries((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, likesCount: updatedLikes } : item))
+      prev.map((item) =>
+        item.id === id ? { ...item, likesCount: updatedLikes, likedByMe: isLiked } : item
+      )
     );
 
     const db = await getDB();
     const entry = await db.get('trail_entries', id);
     if (entry) {
       entry.likesCount = updatedLikes;
+      entry.likedByMe = isLiked;
       await db.put('trail_entries', entry);
       await queueMutation('trail_entries', 'update', entry);
     }
@@ -226,11 +230,15 @@ export default function TrailTab() {
                     </div>
 
                     <button
-                      onClick={() => handleLike(item.id, item.likesCount)}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-[#1F1324] rounded-full border border-[#4F3C59] active:scale-90 transition-transform cursor-pointer"
+                      onClick={() => handleLike(item.id, item.likesCount, item.likedByMe)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full border transition-all active:scale-90 cursor-pointer ${
+                        item.likedByMe
+                          ? 'bg-[#FF8966]/20 border-[#FF8966] text-[#FF8966]'
+                          : 'bg-[#1F1324] border-[#4F3C59] text-[#F6EFE9]'
+                      }`}
                     >
-                      <Heart className="w-3.5 h-3.5 text-[#FF8966] hover:fill-[#FF8966]" />
-                      <span className="text-xs font-bold text-[#F6EFE9]">{item.likesCount}</span>
+                      <Heart className={`w-3.5 h-3.5 ${item.likedByMe ? 'fill-[#FF8966] text-[#FF8966]' : 'text-[#FF8966]'}`} />
+                      <span className="text-xs font-bold">{item.likesCount}</span>
                     </button>
                   </div>
                 </div>

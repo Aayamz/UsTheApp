@@ -9,6 +9,7 @@ export interface TrailEntry {
   date: string; // ISO string
   partner: string;
   likesCount: number;
+  likedByMe?: boolean;
   tags?: string[];
   countdownTarget?: string; // target date ISO
   location?: string;
