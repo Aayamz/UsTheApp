@@ -79,39 +79,129 @@ export default function NavigationShell() {
         email.split('@')[0];
       const avatarUrl = authData.user.user_metadata?.avatar_url || '';
 
-      const { data: userPairs } = await supabase
+      // 1. Fetch own pairs
+      const { data: ownPairs } = await supabase
         .from('pairs')
-        .select('id, created_by, partner_id')
+        .select('id, created_by, partner_id, invite_code')
         .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`);
 
-      let partnerName: string | null = null;
-      let isCreator = true;
+      // 2. Fetch joined friend spaces
+      const { data: memberRows } = await supabase
+        .from('space_members')
+        .select('space_id')
+        .eq('user_id', authData.user.id);
 
-      const activePair =
-        userPairs?.find((p) => p.partner_id !== null) ||
-        userPairs?.find((p) => p.partner_id === authData.user.id) ||
-        userPairs?.[0] ||
-        null;
+      let joinedPairs: any[] = [];
+      if (memberRows && memberRows.length > 0) {
+        const spaceIds = memberRows.map((m) => m.space_id);
+        const { data: friendPairsData } = await supabase
+          .from('pairs')
+          .select('id, created_by, partner_id, invite_code')
+          .in('id', spaceIds);
+        if (friendPairsData) joinedPairs = friendPairsData;
+      }
 
-      if (activePair) {
-        await supabase
+      // Combine into unique pair list
+      const pairMap = new Map<string, any>();
+      (ownPairs || []).forEach((p) => pairMap.set(p.id, p));
+      joinedPairs.forEach((p) => pairMap.set(p.id, p));
+      let allPairs = Array.from(pairMap.values());
+
+      if (allPairs.length === 0) {
+        const { ensurePairForUser } = await import('@/lib/pairing');
+        const createdPair = await ensurePairForUser(supabase, authData.user.id);
+        if (createdPair) allPairs = [createdPair];
+      }
+
+      // Get user profile to check active pair_id preference
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('pair_id')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+      // Build GroupSpace items for each pair
+      const spaceItems: GroupSpace[] = [];
+      for (const pair of allPairs) {
+        const memberIds = new Set<string>();
+        if (pair.created_by) memberIds.add(pair.created_by);
+        if (pair.partner_id) memberIds.add(pair.partner_id);
+
+        const { data: smData } = await supabase
+          .from('space_members')
+          .select('user_id')
+          .eq('space_id', pair.id);
+
+        (smData || []).forEach((sm) => memberIds.add(sm.user_id));
+
+        const memberIdArray = Array.from(memberIds);
+        const { data: memberProfiles } = await supabase
           .from('profiles')
-          .update({ pair_id: activePair.id })
-          .eq('id', authData.user.id);
+          .select('id, display_name')
+          .in('id', memberIdArray);
 
-        isCreator = activePair.created_by === authData.user.id;
-        const partnerId = isCreator ? activePair.partner_id : activePair.created_by;
+        const namesMap = new Map<string, string>();
+        (memberProfiles || []).forEach((p) => {
+          if (p.display_name) namesMap.set(p.id, p.display_name);
+        });
 
-        if (partnerId && partnerId !== authData.user.id) {
-          const { data: partnerProfile } = await supabase
-            .from('profiles')
-            .select('display_name')
-            .eq('id', partnerId)
-            .maybeSingle();
+        const names = memberIdArray.map((id) =>
+          id === authData.user.id ? displayName : namesMap.get(id) || 'Member'
+        );
 
-          if (partnerProfile) {
-            partnerName = partnerProfile.display_name || 'Partner';
-          }
+        let spaceName = '';
+        let spaceType: 'couple' | 'group' = 'couple';
+
+        if (memberIdArray.length >= 3 || (smData && smData.length > 0)) {
+          spaceType = 'group';
+          spaceName = `🎉 Friends Space: ${names.join(', ')}`;
+        } else if (memberIdArray.length === 2) {
+          spaceType = 'couple';
+          spaceName = `💕 Couple Space: ${names.join(' & ')}`;
+        } else {
+          spaceType = 'couple';
+          spaceName = `💕 Private Space: ${displayName}`;
+        }
+
+        spaceItems.push({
+          id: pair.id,
+          name: spaceName,
+          type: spaceType,
+          memberCount: memberIdArray.length,
+        });
+      }
+
+      setSpaces(spaceItems);
+
+      // Determine active space (preserve existing selection if valid)
+      let activeItem: GroupSpace | undefined;
+      setActiveSpace((prevActive) => {
+        activeItem = spaceItems.find((s) => s.id === prevActive?.id);
+        if (!activeItem && userProfile?.pair_id) {
+          activeItem = spaceItems.find((s) => s.id === userProfile.pair_id);
+        }
+        if (!activeItem) {
+          activeItem = spaceItems[0];
+        }
+        return activeItem;
+      });
+
+      // Determine user role in active space
+      const targetActiveId = activeItem?.id || userProfile?.pair_id || allPairs[0]?.id;
+      const activePairObj = allPairs.find((p) => p.id === targetActiveId);
+      let role: 'creator' | 'partner' | 'friend' = 'creator';
+      let roleLabel = 'Creator / Admin 👑';
+
+      if (activePairObj) {
+        if (activePairObj.created_by === authData.user.id) {
+          role = 'creator';
+          roleLabel = 'Creator / Admin 👑';
+        } else if (activePairObj.partner_id === authData.user.id) {
+          role = 'partner';
+          roleLabel = 'Partner 💖';
+        } else {
+          role = 'friend';
+          roleLabel = 'Friend Member 🥳';
         }
       }
 
@@ -119,29 +209,9 @@ export default function NavigationShell() {
         name: displayName,
         email,
         avatar: avatarUrl,
-        role: isCreator ? 'creator' : 'partner',
-        roleLabel: isCreator ? 'Creator / Admin 👑' : 'Partner 💖',
+        role,
+        roleLabel,
         isOnline: true,
-      });
-
-      const spaceTitle = partnerName
-        ? `💕 Couple Space: ${displayName} & ${partnerName}`
-        : `💕 Private Space: ${displayName}`;
-
-      const updatedSpaces: GroupSpace[] = [
-        {
-          id: 'g-1',
-          name: spaceTitle,
-          type: 'couple',
-          memberCount: partnerName ? 2 : 1,
-        },
-        { id: 'g-2', name: '🎉 Group Event Capsules', type: 'group', memberCount: 1 },
-      ];
-      setSpaces(updatedSpaces);
-
-      setActiveSpace((prevActive) => {
-        const match = updatedSpaces.find((s) => s.id === prevActive?.id);
-        return match || updatedSpaces[0];
       });
     };
 
@@ -241,9 +311,17 @@ export default function NavigationShell() {
         currentUser={currentUser}
         activeSpace={activeSpace}
         allSpaces={spaces}
-        onSelectSpace={(space) => {
+        onSelectSpace={async (space) => {
           setActiveSpace(space);
           setProfileOpen(false);
+          const { data: authData } = await supabase.auth.getUser();
+          if (authData.user) {
+            await supabase.from('profiles').upsert({
+              id: authData.user.id,
+              pair_id: space.id,
+            });
+            startGlobalPairSync().catch(() => {});
+          }
         }}
       />
     </div>

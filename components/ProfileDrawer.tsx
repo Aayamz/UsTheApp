@@ -54,64 +54,120 @@ export default function ProfileDrawer({
 }: ProfileDrawerProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [partner, setPartner] = useState<PartnerProfile | null>(null);
+  const [connectedMembers, setConnectedMembers] = useState<PartnerProfile[]>([]);
   const [inviteCode, setInviteCode] = useState<string>('');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    // Query partner profile & pair invite code from Supabase
+    // Query active space pair invite code & all space members from Supabase
     const fetchProfileAndPair = async () => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return;
 
-      const { data: userPairs } = await supabase
-        .from('pairs')
-        .select('id, created_by, partner_id, invite_code')
-        .or(`created_by.eq.${userData.user.id},partner_id.eq.${userData.user.id}`)
-        .order('created_at', { ascending: false });
+      let pair: any = null;
+      const targetPairId = activeSpace?.id;
 
-      const pair =
-        userPairs?.find((p) => p.partner_id !== null) ||
-        userPairs?.[0] ||
-        null;
+      if (targetPairId && targetPairId !== 'g-1' && targetPairId !== 'g-2') {
+        const { data: foundPair } = await supabase
+          .from('pairs')
+          .select('id, created_by, partner_id, invite_code')
+          .eq('id', targetPairId)
+          .maybeSingle();
+        pair = foundPair;
+      }
+
+      if (!pair) {
+        const { data: userProfile } = await supabase
+          .from('profiles')
+          .select('pair_id')
+          .eq('id', userData.user.id)
+          .maybeSingle();
+
+        if (userProfile?.pair_id) {
+          const { data: foundPair } = await supabase
+            .from('pairs')
+            .select('id, created_by, partner_id, invite_code')
+            .eq('id', userProfile.pair_id)
+            .maybeSingle();
+          pair = foundPair;
+        }
+      }
+
+      if (!pair) {
+        const { data: userPairs } = await supabase
+          .from('pairs')
+          .select('id, created_by, partner_id, invite_code')
+          .or(`created_by.eq.${userData.user.id},partner_id.eq.${userData.user.id}`)
+          .order('created_at', { ascending: false });
+
+        pair = userPairs?.[0] || null;
+      }
 
       if (pair) {
         setInviteCode(pair.invite_code || '');
 
-        const partnerId = pair.created_by === userData.user.id ? pair.partner_id : pair.created_by;
-        if (partnerId && partnerId !== userData.user.id) {
-          const { data: partnerProfile } = await supabase
+        const memberIds = new Set<string>();
+        if (pair.created_by) memberIds.add(pair.created_by);
+        if (pair.partner_id) memberIds.add(pair.partner_id);
+
+        const { data: spaceMembersData } = await supabase
+          .from('space_members')
+          .select('user_id, role')
+          .eq('space_id', pair.id);
+
+        const roleMap = new Map<string, string>();
+        if (pair.created_by) roleMap.set(pair.created_by, 'creator');
+        if (pair.partner_id) roleMap.set(pair.partner_id, 'partner');
+
+        (spaceMembersData || []).forEach((sm) => {
+          memberIds.add(sm.user_id);
+          if (sm.role) roleMap.set(sm.user_id, sm.role);
+        });
+
+        const otherMemberIds = Array.from(memberIds).filter((id) => id !== userData.user.id);
+
+        if (otherMemberIds.length > 0) {
+          const { data: memberProfiles } = await supabase
             .from('profiles')
             .select('id, display_name, avatar_url')
-            .eq('id', partnerId)
-            .maybeSingle();
+            .in('id', otherMemberIds);
 
-          if (partnerProfile) {
-            setPartner({
-              id: partnerId,
-              displayName: partnerProfile.display_name || 'Partner',
-              avatarUrl: partnerProfile.avatar_url,
-              isOnline: true,
-            });
+          if (memberProfiles && memberProfiles.length > 0) {
+            setConnectedMembers(
+              memberProfiles.map((p) => {
+                const r = roleMap.get(p.id);
+                let label = 'Connected Member 💖';
+                if (r === 'friend') label = 'Group Friend 🥳';
+                else if (r === 'creator') label = 'Space Creator 👑';
+
+                return {
+                  id: p.id,
+                  displayName: p.display_name || 'Member',
+                  avatarUrl: p.avatar_url,
+                  isOnline: true,
+                  roleLabel: label,
+                } as any;
+              })
+            );
           } else {
-            setPartner(null);
+            setConnectedMembers([]);
           }
         } else {
-          setPartner(null);
+          setConnectedMembers([]);
         }
       }
     };
 
-    fetchProfileAndPair().catch((e) => console.log('Error fetching partner:', e));
+    fetchProfileAndPair().catch((e) => console.log('Error fetching space details:', e));
 
     const interval = setInterval(() => {
       fetchProfileAndPair().catch(() => {});
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isOpen]);
+  }, [isOpen, activeSpace]);
 
   const handleSignOut = async () => {
     Haptics.lightTap();
@@ -356,29 +412,31 @@ export default function ProfileDrawer({
                   </span>
                 </div>
 
-                {/* Partner / Friend */}
-                {partner ? (
-                  <div className="flex items-center justify-between p-3 bg-[#1F1324] border border-[#4F3C59] rounded-2xl text-xs">
-                    <div className="flex items-center gap-2.5">
-                      <div className="relative">
-                        <div className="w-8 h-8 rounded-full bg-[#FF8966]/20 flex items-center justify-center text-xs font-bold text-[#F6EFE9]">
-                          {partner.avatarUrl ? (
-                            <img src={partner.avatarUrl} alt={partner.displayName} className="w-full h-full object-cover rounded-full" />
-                          ) : (
-                            partner.displayName.charAt(0)
-                          )}
+                {/* Connected Members */}
+                {connectedMembers.length > 0 ? (
+                  connectedMembers.map((member) => (
+                    <div key={member.id} className="flex items-center justify-between p-3 bg-[#1F1324] border border-[#4F3C59] rounded-2xl text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="relative">
+                          <div className="w-8 h-8 rounded-full bg-[#FF8966]/20 flex items-center justify-center text-xs font-bold text-[#F6EFE9]">
+                            {member.avatarUrl ? (
+                              <img src={member.avatarUrl} alt={member.displayName} className="w-full h-full object-cover rounded-full" />
+                            ) : (
+                              member.displayName.charAt(0)
+                            )}
+                          </div>
+                          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#1F1324]" />
                         </div>
-                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#1F1324]" />
+                        <div>
+                          <span className="font-bold text-[#F6EFE9] block">{member.displayName}</span>
+                          <span className="text-[10px] text-[#C9B3D1]">{(member as any).roleLabel || 'Connected Member 💖'}</span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="font-bold text-[#F6EFE9] block">{partner.displayName}</span>
-                        <span className="text-[10px] text-[#C9B3D1]">Connected Member 💖</span>
-                      </div>
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        Active Now
+                      </span>
                     </div>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                      Active Now
-                    </span>
-                  </div>
+                  ))
                 ) : (
                   <div className="flex items-center justify-between p-3 bg-[#1F1324]/50 border border-dashed border-[#4F3C59] rounded-2xl text-xs text-[#C9B3D1]">
                     <div className="flex items-center gap-2">

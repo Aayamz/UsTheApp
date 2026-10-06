@@ -21,25 +21,39 @@ export async function getActivePairId(): Promise<string | null> {
     if (validPair) return validPair.id;
   }
 
+  const { data: memberRow } = await supabase
+    .from('space_members')
+    .select('space_id')
+    .eq('user_id', authData.user.id)
+    .maybeSingle();
+
+  if (memberRow?.space_id) {
+    await supabase
+      .from('profiles')
+      .upsert({ id: authData.user.id, pair_id: memberRow.space_id });
+    return memberRow.space_id;
+  }
+
   const { data: pairs } = await supabase
     .from('pairs')
     .select('id, created_by, partner_id')
     .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`);
 
-  if (!pairs || pairs.length === 0) return null;
+  if (pairs && pairs.length > 0) {
+    const active =
+      pairs.find((p) => p.partner_id !== null) ||
+      pairs.find((p) => p.partner_id === authData.user.id) ||
+      pairs[0];
 
-  const active =
-    pairs.find((p) => p.partner_id !== null) ||
-    pairs.find((p) => p.partner_id === authData.user.id) ||
-    pairs[0];
-
-  if (active) {
-    await supabase
-      .from('profiles')
-      .upsert({ id: authData.user.id, pair_id: active.id });
+    if (active) {
+      await supabase
+        .from('profiles')
+        .upsert({ id: authData.user.id, pair_id: active.id });
+      return active.id;
+    }
   }
 
-  return active?.id || null;
+  return null;
 }
 
 let globalChannel: any = null;
