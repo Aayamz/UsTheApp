@@ -13,12 +13,7 @@ export default async function Home() {
 
   if (!user) redirect('/login');
 
-  const pair = await ensurePairForUser(supabase, user.id);
-
-  // If partner hasn't joined yet, redirect to invite waiting screen
-  if (!pair.partner_id) {
-    redirect('/invite');
-  }
+  await ensurePairForUser(supabase, user.id);
 
   return <NavigationShell />;
 }

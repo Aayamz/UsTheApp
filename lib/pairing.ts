@@ -11,40 +11,45 @@ export async function getMyProfile(supabase: SupabaseClient, userId: string) {
     return profile;
   }
 
-  // Fallback check: see if user belongs to a pair in pairs table
-  const { data: pair } = await supabase
+  // Fallback check: see if user belongs to pairs in pairs table (prioritize active paired pairs)
+  const { data: pairs } = await supabase
     .from('pairs')
-    .select('id')
+    .select('id, created_by, partner_id, created_at')
     .or(`created_by.eq.${userId},partner_id.eq.${userId}`)
-    .maybeSingle();
+    .order('created_at', { ascending: false });
 
-  if (pair) {
+  if (pairs && pairs.length > 0) {
+    // Prefer pair with partner_id attached if user is partner, or creator of active pair
+    const activePair = pairs.find((p) => p.partner_id !== null) || pairs[0];
     await supabase.from('profiles').upsert({
       id: userId,
-      pair_id: pair.id,
+      pair_id: activePair.id,
       display_name: profile?.display_name || undefined,
     });
-    return { id: userId, pair_id: pair.id, display_name: profile?.display_name };
+    return { id: userId, pair_id: activePair.id, display_name: profile?.display_name };
   }
 
   return profile;
 }
 
 export async function ensurePairForUser(supabase: SupabaseClient, userId: string) {
-  // Check if user is creator or partner in an existing pair
-  const { data: existing } = await supabase
+  // Check if user is creator or partner in existing pairs
+  const { data: pairs } = await supabase
     .from('pairs')
     .select('*')
     .or(`created_by.eq.${userId},partner_id.eq.${userId}`)
-    .maybeSingle();
+    .order('created_at', { ascending: false });
 
-  if (existing) {
+  if (pairs && pairs.length > 0) {
+    // Prefer pair that has partner_id set (if any), or most recent
+    const activePair = pairs.find((p) => p.partner_id !== null) || pairs[0];
+
     // Always keep profiles table in sync using upsert
     await supabase.from('profiles').upsert({
       id: userId,
-      pair_id: existing.id,
+      pair_id: activePair.id,
     });
-    return existing;
+    return activePair;
   }
 
   // Create new pair if none exists
@@ -65,10 +70,11 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
 }
 
 export async function getPairByInviteCode(supabase: SupabaseClient, code: string) {
+  if (!code) return null;
   const { data } = await supabase
     .from('pairs')
     .select('*')
-    .eq('invite_code', code)
+    .eq('invite_code', code.trim())
     .maybeSingle();
   return data;
 }
@@ -78,7 +84,8 @@ export async function joinPairByCode(
   code: string,
   userId: string
 ) {
-  const pair = await getPairByInviteCode(supabase, code);
+  if (!code || !userId) return null;
+  const pair = await getPairByInviteCode(supabase, code.trim());
   if (!pair) return null;
 
   if (pair.created_by === userId) {
@@ -106,6 +113,18 @@ export async function joinPairByCode(
 
   if (error || !updated) return null;
 
+  // Clean up any empty solo pairs created by this user that were never claimed by anyone else
+  try {
+    await supabase
+      .from('pairs')
+      .delete()
+      .eq('created_by', userId)
+      .is('partner_id', null)
+      .neq('id', updated.id);
+  } catch (e) {
+    console.log('Cleanup of solo pair error (non-fatal):', e);
+  }
+
   // Sync profiles for invited user
   await supabase.from('profiles').upsert({
     id: userId,
@@ -114,3 +133,4 @@ export async function joinPairByCode(
 
   return updated;
 }
+

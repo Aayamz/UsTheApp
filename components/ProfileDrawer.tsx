@@ -16,7 +16,9 @@ import {
   ShieldCheck, 
   Check, 
   Radio,
-  UserPlus
+  UserPlus,
+  Share2,
+  Copy
 } from 'lucide-react';
 
 export interface GroupSpace {
@@ -53,12 +55,14 @@ export default function ProfileDrawer({
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
   const [partner, setPartner] = useState<PartnerProfile | null>(null);
+  const [inviteCode, setInviteCode] = useState<string>('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    // Query partner profile from Supabase if paired
-    const fetchPartner = async () => {
+    // Query partner profile & pair invite code from Supabase
+    const fetchProfileAndPair = async () => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return;
 
@@ -71,11 +75,13 @@ export default function ProfileDrawer({
       if (profile?.pair_id) {
         const { data: pair } = await supabase
           .from('pairs')
-          .select('created_by, partner_id')
+          .select('id, created_by, partner_id, invite_code')
           .eq('id', profile.pair_id)
-          .single();
+          .maybeSingle();
 
         if (pair) {
+          setInviteCode(pair.invite_code || '');
+
           const partnerId = pair.created_by === userData.user.id ? pair.partner_id : pair.created_by;
           if (partnerId) {
             const { data: partnerProfile } = await supabase
@@ -90,12 +96,14 @@ export default function ProfileDrawer({
               avatarUrl: partnerProfile?.avatar_url,
               isOnline: true,
             });
+          } else {
+            setPartner(null);
           }
         }
       }
     };
 
-    fetchPartner().catch((e) => console.log('Error fetching partner:', e));
+    fetchProfileAndPair().catch((e) => console.log('Error fetching partner:', e));
   }, [isOpen]);
 
   const handleSignOut = async () => {
@@ -106,10 +114,41 @@ export default function ProfileDrawer({
     } catch (err) {
       console.error('Sign out error (navigating away regardless):', err);
     } finally {
-      // Hard navigation, not router.push -- this guarantees a full reload
-      // that re-reads auth state fresh, instead of a soft client-side
-      // transition that can be served from a stale cache.
       window.location.href = '/login';
+    }
+  };
+
+  const inviteUrl = inviteCode && typeof window !== 'undefined'
+    ? `${window.location.origin}/join/${inviteCode}`
+    : '';
+
+  const handleCopyLink = async () => {
+    if (!inviteUrl) return;
+    Haptics.lightTap();
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Copy failed:', err);
+    }
+  };
+
+  const handleShareLink = async () => {
+    if (!inviteUrl) return;
+    Haptics.lightTap();
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Join me on U&!',
+          text: "Let's connect on U&! Tap the link to join me:",
+          url: inviteUrl,
+        });
+      } catch (err) {
+        // Share cancelled
+      }
+    } else {
+      await handleCopyLink();
     }
   };
 
@@ -178,6 +217,47 @@ export default function ProfileDrawer({
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* Invite Partner & Friends Card */}
+            <div className="bg-[#1F1324] border border-[#FF8966]/40 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#FF8966]">
+                  <UserPlus className="w-4 h-4" />
+                  <span>Invite Partner & Friends</span>
+                </div>
+                {inviteCode && (
+                  <span className="text-[10px] font-mono bg-[#372A3E] text-[#F6EFE9] px-2 py-0.5 rounded-full border border-[#4F3C59]">
+                    Code: {inviteCode}
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-[#C9B3D1] leading-relaxed">
+                Share this invite link with your partner or friends to pair up and connect instantly.
+              </p>
+
+              {inviteUrl && (
+                <div className="flex items-center gap-2">
+                  {typeof navigator !== 'undefined' && 'share' in navigator && (
+                    <button
+                      onClick={handleShareLink}
+                      className="flex-1 py-2 px-3 bg-[#FF8966] text-[#1F1324] hover:bg-[#FF8966]/90 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Share</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={handleCopyLink}
+                    className="flex-1 py-2 px-3 bg-[#372A3E] border border-[#4F3C59] text-[#F6EFE9] hover:bg-[#4F3C59]/50 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#FF8966]" />}
+                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Group / Space Switcher */}
@@ -256,7 +336,7 @@ export default function ProfileDrawer({
                   </span>
                 </div>
 
-                {/* Partner */}
+                {/* Partner / Friend */}
                 {partner ? (
                   <div className="flex items-center justify-between p-3 bg-[#1F1324] border border-[#4F3C59] rounded-2xl text-xs">
                     <div className="flex items-center gap-2.5">
@@ -272,7 +352,7 @@ export default function ProfileDrawer({
                       </div>
                       <div>
                         <span className="font-bold text-[#F6EFE9] block">{partner.displayName}</span>
-                        <span className="text-[10px] text-[#C9B3D1]">Beloved Partner 💖</span>
+                        <span className="text-[10px] text-[#C9B3D1]">Connected Member 💖</span>
                       </div>
                     </div>
                     <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
@@ -283,7 +363,7 @@ export default function ProfileDrawer({
                   <div className="flex items-center justify-between p-3 bg-[#1F1324]/50 border border-dashed border-[#4F3C59] rounded-2xl text-xs text-[#C9B3D1]">
                     <div className="flex items-center gap-2">
                       <UserPlus className="w-4 h-4 text-[#FF8966]" />
-                      <span>Waiting for partner to join...</span>
+                      <span>Waiting for partner or friends to join...</span>
                     </div>
                   </div>
                 )}

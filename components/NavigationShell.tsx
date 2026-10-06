@@ -12,6 +12,7 @@ import PickTab from './tabs/PickTab';
 import NudgeTab from './tabs/NudgeTab';
 import { seedInitialDataIfEmpty } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
+import { joinPairByCode } from '@/lib/pairing';
 
 export default function NavigationShell() {
   const [activeTab, setActiveTab] = useState<TabType>('trail');
@@ -39,6 +40,25 @@ export default function NavigationShell() {
       const { data: authData } = await supabase.auth.getUser();
       if (!authData.user) return;
 
+      // Auto-claim pending invite if user logged in via invite link
+      if (typeof window !== 'undefined') {
+        let pendingCode = localStorage.getItem('pending_invite_code');
+        if (!pendingCode) {
+          const match = document.cookie.match(/(?:^|; )pending_invite_code=([^;]*)/);
+          if (match) pendingCode = decodeURIComponent(match[1]);
+        }
+
+        if (pendingCode) {
+          try {
+            await joinPairByCode(supabase, pendingCode, authData.user.id);
+            localStorage.removeItem('pending_invite_code');
+            document.cookie = 'pending_invite_code=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          } catch (e) {
+            console.error('Error auto-claiming pending invite:', e);
+          }
+        }
+      }
+
       const email = authData.user.email || 'user@u-and-me.app';
       const displayName =
         authData.user.user_metadata?.full_name ||
@@ -61,7 +81,7 @@ export default function NavigationShell() {
           .from('pairs')
           .select('created_by, partner_id')
           .eq('id', profile.pair_id)
-          .single();
+          .maybeSingle();
 
         if (pair) {
           isCreator = pair.created_by === authData.user.id;

@@ -16,12 +16,10 @@ export default async function InvitePage() {
 
   const pair = await ensurePairForUser(supabase, user.id);
 
-  if (pair.partner_id) redirect('/');
-
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center gap-6 px-8 text-center bg-[#1F1324] text-[#F6EFE9]">
+    <div className="min-h-full w-full flex flex-col items-center justify-center gap-6 px-8 py-12 text-center bg-[#1F1324] text-[#F6EFE9]">
       <Logo size={48} showWordmark />
-      <h1 className="text-xl font-bold">Invite your partner in</h1>
+      <h1 className="text-xl font-bold">Invite your partner or friends</h1>
       <InviteWaiting pairId={pair.id} inviteCode={pair.invite_code} />
     </div>
   );

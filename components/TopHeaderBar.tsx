@@ -4,7 +4,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Haptics } from '@/lib/haptics';
 import Logo from '@/components/Logo';
-import { Users, Crown, Heart, ShieldCheck } from 'lucide-react';
+import { Users, Crown, Heart, ShieldCheck, UserPlus } from 'lucide-react';
 
 export interface UserProfileInfo {
   name: string;
@@ -43,19 +43,26 @@ export default function TopHeaderBar({
           className="flex items-center gap-1.5 px-2.5 py-1 bg-[#372A3E] border border-[#4F3C59] rounded-full text-xs text-[#F6EFE9] hover:border-[#FF8966]/40 transition-colors cursor-pointer"
         >
           <span className="w-2 h-2 rounded-full bg-[#FF8966] animate-pulse" />
-          <span className="font-medium text-[11px] truncate max-w-[130px] sm:max-w-[170px]">
+          <span className="font-medium text-[11px] truncate max-w-[110px] sm:max-w-[150px]">
             {activeSpaceName}
           </span>
         </button>
       </div>
 
-      {/* Right Side: Profile Avatar with Online Dot & Role Badge */}
+      {/* Right Side: Quick Invite Button + Profile Avatar */}
       <div className="flex items-center gap-2">
-        {/* Live Online Badge */}
-        <div className="flex items-center gap-1 text-[10px] font-semibold text-[#FF8966] bg-[#FF8966]/10 px-2 py-0.5 rounded-full border border-[#FF8966]/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-          <span>{onlineCount} Online</span>
-        </div>
+        {/* Quick Invite Button */}
+        <button
+          onClick={() => {
+            Haptics.lightTap();
+            onOpenProfile();
+          }}
+          className="flex items-center gap-1 text-[11px] font-bold text-[#FF8966] bg-[#FF8966]/15 hover:bg-[#FF8966]/25 border border-[#FF8966]/40 px-2.5 py-1 rounded-full transition-all active:scale-95 cursor-pointer"
+          title="Invite partner or friends"
+        >
+          <UserPlus className="w-3.5 h-3.5" />
+          <span>Invite</span>
+        </button>
 
         {/* Profile Avatar Button */}
         <button
