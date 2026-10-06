@@ -34,16 +34,17 @@ function prepareSupabasePayload(store: string, payload: any, userId: string, pai
 
   switch (store) {
     case 'trail_entries':
+      const authorUuid = validUserId || (isValidUuid(payload.partner) ? payload.partner : null);
       return {
         id: payload.id || `t-${Date.now()}`,
         pair_id: commonPairId,
-        created_by: validUserId,
+        created_by: authorUuid,
         type: payload.type || 'moment',
         title: payload.title,
         description: payload.description || null,
         image_url: payload.imageUrl || payload.image_url || null,
         date: payload.date || new Date().toISOString(),
-        partner: validUserId || payload.partner || 'You',
+        partner: authorUuid || payload.partner || 'You',
         likes_count: payload.likesCount ?? payload.likes_count ?? 0,
         tags: payload.tags || [],
         countdown_target: payload.countdownTarget || payload.countdown_target || null,

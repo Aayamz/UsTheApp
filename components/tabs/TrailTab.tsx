@@ -6,6 +6,7 @@ import { getDB, TrailEntry } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
 import { syncTrailEntries } from '@/lib/pairSync';
 import { Haptics } from '@/lib/haptics';
+import { supabase } from '@/lib/supabase';
 import { 
   Plus, 
   Calendar, 
@@ -86,6 +87,9 @@ export default function TrailTab() {
     if (!newTitle.trim()) return;
 
     Haptics.lightTap();
+    const { data: authData } = await supabase.auth.getUser();
+    const currentUserId = authData?.user?.id;
+
     const newEntry: TrailEntry = {
       id: `t-${Date.now()}`,
       type: newType,
@@ -94,7 +98,7 @@ export default function TrailTab() {
       location: newLocation.trim() || undefined,
       imageUrl: newImage.trim() || 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=800&auto=format&fit=crop&q=80',
       date: new Date().toISOString(),
-      partner: 'You',
+      partner: currentUserId || 'You',
       likesCount: 1,
       countdownTarget: newType === 'countdown' ? (countdownDate ? new Date(countdownDate).toISOString() : new Date(Date.now() + 14 * 86400000).toISOString()) : undefined,
     };

@@ -2,6 +2,11 @@ import { supabase } from './supabase';
 import { getDB, TrailEntry, SparkPrompt, SomedayCapsule, PickSwipe, NudgeRecord } from './db';
 import { Haptics } from './haptics';
 
+function isValidUuid(val: any): boolean {
+  if (typeof val !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 export async function getActivePairId(): Promise<string | null> {
   const { data: authData } = await supabase.auth.getUser();
   if (!authData?.user) return null;
@@ -94,14 +99,20 @@ export async function fetchAndSaveTrail(pairId: string) {
   if (error) console.error('Error fetching trail entries:', error);
 
   if (remote) {
-    remote.forEach((r) => {
+    for (const r of remote) {
       const localItem = localMap.get(r.id);
       const likedByMe = localItem ? Boolean(localItem.likedByMe) : false;
 
-      const isMine =
-        (r.created_by && r.created_by === currentUserId) ||
-        (r.partner && r.partner === currentUserId) ||
-        (localItem?.partner === 'You' && (!r.partner || r.partner === 'You' || r.partner === currentUserId));
+      // Determine whether r was authored by current user or partner
+      const authorId = r.created_by || (isValidUuid(r.partner) ? r.partner : null);
+      let isMine = false;
+
+      if (authorId && currentUserId) {
+        isMine = authorId === currentUserId;
+      } else if (!authorId && currentUserId) {
+        // If row lacks creator UUID, fallback to local creation check
+        isMine = localItem?.partner === 'You' && r.partner === 'You';
+      }
 
       const authorName = isMine ? 'You' : partnerDisplayName;
 
@@ -119,7 +130,16 @@ export async function fetchAndSaveTrail(pairId: string) {
         countdownTarget: r.countdown_target || undefined,
         location: r.location || undefined,
       });
-    });
+
+      // Auto-migrate legacy rows lacking created_by in Supabase
+      if (!r.created_by && currentUserId && isMine) {
+        supabase
+          .from('trail_entries')
+          .update({ created_by: currentUserId, partner: currentUserId })
+          .eq('id', r.id)
+          .then(() => {});
+      }
+    }
   }
 
   const merged = Array.from(localMap.values());
