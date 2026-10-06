@@ -20,12 +20,6 @@ export default function Logo({ className = '', size = 34, showWordmark = false }
         style={{ width: size, height: size }}
         className="rounded-xl object-cover shadow-md shrink-0 border border-[#FF8966]/40 bg-[#1F1324]"
       />
-
-      {showWordmark && (
-        <span className="font-extrabold text-lg text-[#F6EFE9] tracking-tight">
-          U<span className="text-[#FF8966]">&</span>
-        </span>
-      )}
     </div>
   );
 }
