@@ -1,6 +1,11 @@
 import { getDB, SyncMutation } from './db';
 import { supabase, isSupabaseConfigured } from './supabase';
 
+function isValidUuid(val: any): boolean {
+  if (typeof val !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 // Queue an optimistic mutation to local queue and trigger background processing
 export async function queueMutation(store: string, action: 'insert' | 'update' | 'delete', payload: any) {
   if (typeof window === 'undefined') return;
@@ -23,7 +28,9 @@ export async function queueMutation(store: string, action: 'insert' | 'update' |
 
 // Format local IndexedDB camelCase model to match Supabase Postgres SQL schema
 function prepareSupabasePayload(store: string, payload: any, userId: string, pairId: string | null) {
-  const commonPairId = pairId || payload.pair_id || null;
+  const rawPairId = pairId || payload.pair_id || null;
+  const commonPairId = isValidUuid(rawPairId) ? rawPairId : null;
+  const validUserId = isValidUuid(userId) ? userId : null;
 
   switch (store) {
     case 'trail_entries':
@@ -65,7 +72,7 @@ function prepareSupabasePayload(store: string, payload: any, userId: string, pai
         content: payload.content || null,
         media_type: payload.mediaType || payload.media_type || 'text',
         media_url: payload.mediaUrl || payload.media_url || null,
-        sealed_by: (payload.sealedBy && payload.sealedBy.includes('-')) ? payload.sealedBy : userId,
+        sealed_by: isValidUuid(payload.sealedBy) ? payload.sealedBy : validUserId,
         is_unlocked: !!(payload.isUnlocked ?? payload.is_unlocked),
         is_event_scoped: !!(payload.isEventScoped ?? payload.is_event_scoped),
         event_name: payload.eventName || payload.event_name || null,
@@ -90,7 +97,7 @@ function prepareSupabasePayload(store: string, payload: any, userId: string, pai
         id: payload.id || `ps-${userId}-${payload.cardId || payload.card_id || 'card'}-${Date.now().toString(36)}`,
         pair_id: commonPairId,
         card_id: payload.cardId || payload.card_id || null,
-        user_id: userId,
+        user_id: validUserId,
         swipe: payload.userSwipe || payload.swipe || 'left',
         matched: !!payload.matched,
         timestamp: payload.timestamp || new Date().toISOString(),
@@ -100,7 +107,7 @@ function prepareSupabasePayload(store: string, payload: any, userId: string, pai
       return {
         id: payload.id,
         pair_id: commonPairId,
-        sender: (payload.sender && payload.sender.includes('-')) ? payload.sender : userId,
+        sender: isValidUuid(payload.sender) ? payload.sender : validUserId,
         emoji: payload.emoji || '❤️',
         label: payload.label || 'Thinking of you',
         timestamp: payload.timestamp || new Date().toISOString(),
@@ -147,11 +154,16 @@ export async function syncPendingMutations() {
       try {
         if (item.action === 'insert' || item.action === 'update') {
           const payloadToSync = prepareSupabasePayload(item.store, item.payload, userId, pairId);
-          await supabase.from(item.store).upsert(payloadToSync, { onConflict: 'id' });
+          const { error } = await supabase.from(item.store).upsert(payloadToSync, { onConflict: 'id' });
+          if (error) {
+            console.error(`Sync error for ${item.store}:`, error);
+          }
         } else if (item.action === 'delete') {
           await supabase.from(item.store).delete().eq('id', item.payload.id);
         }
-      } catch {}
+      } catch (err) {
+        console.error(`Failed executing queue mutation for ${item.store}:`, err);
+      }
 
       // Always clear item from queue after processing to avoid retrying duplicate payloads
       try {

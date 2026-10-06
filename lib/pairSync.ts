@@ -29,26 +29,28 @@ let globalChannel: any = null;
 let currentPairId: string | null = null;
 
 // ----------------------------------------------------
-// FETCH & SAVE HELPERS (IDB + EVENT BROADCAST)
+// FETCH & SAVE HELPERS WITH LOCAL + REMOTE STATE MERGING
 // ----------------------------------------------------
 
 export async function fetchAndSaveTrail(pairId: string) {
-  const { data: remote } = await supabase
+  const db = await getDB();
+  const existingLocal = await db.getAll('trail_entries');
+  const localMap = new Map(existingLocal.map((e) => [e.id, e]));
+
+  const { data: remote, error } = await supabase
     .from('trail_entries')
     .select('*')
     .eq('pair_id', pairId)
     .order('date', { ascending: false });
 
-  const db = await getDB();
-  const existingLocal = await db.getAll('trail_entries');
-  const localMap = new Map(existingLocal.map((e) => [e.id, e]));
+  if (error) console.error('Error fetching trail entries:', error);
 
-  if (remote && remote.length > 0) {
-    const mapped: TrailEntry[] = remote.map((r) => {
+  if (remote) {
+    remote.forEach((r) => {
       const localItem = localMap.get(r.id);
       const likedByMe = localItem ? Boolean(localItem.likedByMe) : false;
 
-      return {
+      localMap.set(r.id, {
         id: r.id,
         type: (r.type as any) || 'moment',
         title: r.title,
@@ -61,34 +63,31 @@ export async function fetchAndSaveTrail(pairId: string) {
         tags: r.tags || [],
         countdownTarget: r.countdown_target || undefined,
         location: r.location || undefined,
-      };
+      });
     });
-
-    const uniqueMap = new Map<string, TrailEntry>();
-    mapped.forEach((item) => uniqueMap.set(item.id, item));
-    const deduplicated = Array.from(uniqueMap.values());
-
-    for (const item of deduplicated) {
-      await db.put('trail_entries', item);
-    }
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('u-sync-trail', { detail: deduplicated }));
-    }
-    return deduplicated;
-  } else if (existingLocal.length > 0) {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('u-sync-trail', { detail: existingLocal }));
-    }
-    return existingLocal;
   }
-  return [];
+
+  const merged = Array.from(localMap.values());
+  merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  for (const item of merged) {
+    await db.put('trail_entries', item);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('u-sync-trail', { detail: merged }));
+  }
+  return merged;
 }
 
 export async function fetchAndSaveSpark(pairId: string) {
+  const db = await getDB();
+  const existingLocal = await db.getAll('spark_prompts');
+  const localMap = new Map(existingLocal.map((e) => [e.id, e]));
+
   const { data: authData } = await supabase.auth.getUser();
   const userId = authData?.user?.id;
-  if (!userId) return [];
+  if (!userId) return Array.from(localMap.values());
 
   const { data: pair } = await supabase
     .from('pairs')
@@ -98,15 +97,16 @@ export async function fetchAndSaveSpark(pairId: string) {
 
   const isCreator = pair?.created_by === userId;
 
-  const { data: remote } = await supabase
+  const { data: remote, error } = await supabase
     .from('spark_prompts')
     .select('*')
     .eq('pair_id', pairId)
     .order('date', { ascending: false });
 
-  if (remote && remote.length > 0) {
-    const db = await getDB();
-    const mapped: SparkPrompt[] = remote.map((r) => {
+  if (error) console.error('Error fetching spark prompts:', error);
+
+  if (remote) {
+    remote.forEach((r) => {
       const myAnswer = isCreator ? r.user_answer : r.partner_answer;
       const partnerAnswer = isCreator ? r.partner_answer : r.user_answer;
 
@@ -114,7 +114,7 @@ export async function fetchAndSaveSpark(pairId: string) {
       const isPartnerAnswered = Boolean(partnerAnswer);
       const isRevealed = Boolean(r.revealed || (isUserAnswered && isPartnerAnswered));
 
-      return {
+      localMap.set(r.id, {
         id: r.id,
         date: r.date,
         question: r.question,
@@ -123,73 +123,88 @@ export async function fetchAndSaveSpark(pairId: string) {
         partnerAnswer: partnerAnswer || undefined,
         revealed: isRevealed,
         answeredAt: r.answered_at || undefined,
-      };
+      });
     });
-
-    for (const item of mapped) {
-      await db.put('spark_prompts', item);
-    }
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('u-sync-spark', { detail: mapped }));
-    }
-    return mapped;
   }
-  return [];
+
+  const merged = Array.from(localMap.values());
+  merged.sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  for (const item of merged) {
+    await db.put('spark_prompts', item);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('u-sync-spark', { detail: merged }));
+  }
+  return merged;
 }
 
 export async function fetchAndSaveSomeday(pairId: string) {
-  const { data: remote } = await supabase
+  const db = await getDB();
+  const existingLocal = await db.getAll('someday_capsules');
+  const localMap = new Map(existingLocal.map((e) => [e.id, e]));
+
+  const { data: remote, error } = await supabase
     .from('someday_capsules')
     .select('*')
     .eq('pair_id', pairId)
     .order('unlock_date', { ascending: true });
 
-  if (remote && remote.length > 0) {
-    const db = await getDB();
-    const mapped: SomedayCapsule[] = remote.map((r) => ({
-      id: r.id,
-      title: r.title,
-      unlockDate: r.unlock_date,
-      content: r.content || '',
-      mediaType: (r.media_type as any) || 'text',
-      mediaUrl: r.media_url || undefined,
-      sealedBy: r.sealed_by || 'Partner',
-      isUnlocked: Boolean(r.is_unlocked),
-      createdAt: r.created_at || new Date().toISOString(),
-      isEventScoped: Boolean(r.is_event_scoped),
-      eventName: r.event_name || undefined,
-      contributors: [],
-    }));
+  if (error) console.error('Error fetching someday capsules:', error);
 
-    const uniqueMap = new Map<string, SomedayCapsule>();
-    mapped.forEach((item) => uniqueMap.set(item.id, item));
-    const deduplicated = Array.from(uniqueMap.values());
-
-    for (const item of deduplicated) {
-      await db.put('someday_capsules', item);
-    }
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('u-sync-someday', { detail: deduplicated }));
-    }
-    return deduplicated;
+  if (remote) {
+    remote.forEach((r) => {
+      localMap.set(r.id, {
+        id: r.id,
+        title: r.title,
+        unlockDate: r.unlock_date,
+        content: r.content || '',
+        mediaType: (r.media_type as any) || 'text',
+        mediaUrl: r.media_url || undefined,
+        sealedBy: r.sealed_by || 'Partner',
+        isUnlocked: Boolean(r.is_unlocked),
+        createdAt: r.created_at || new Date().toISOString(),
+        isEventScoped: Boolean(r.is_event_scoped),
+        eventName: r.event_name || undefined,
+        contributors: localMap.get(r.id)?.contributors || [],
+      });
+    });
   }
-  return [];
+
+  const merged = Array.from(localMap.values());
+  merged.sort((a, b) => new Date(a.unlockDate).getTime() - new Date(b.unlockDate).getTime());
+
+  for (const item of merged) {
+    await db.put('someday_capsules', item);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('u-sync-someday', { detail: merged }));
+  }
+  return merged;
 }
 
 export async function fetchAndSavePickSwipes(pairId: string, payload?: any) {
+  const db = await getDB();
+  const existingSwipes = await db.getAll('pick_swipes');
+  const swipeMap: Record<string, PickSwipe> = {};
+  existingSwipes.forEach((s) => {
+    swipeMap[s.cardId] = s;
+  });
+
   const { data: authData } = await supabase.auth.getUser();
   const myUserId = authData?.user?.id;
-  if (!myUserId) return {};
+  if (!myUserId) return swipeMap;
 
-  const { data: remote } = await supabase
+  const { data: remote, error } = await supabase
     .from('pick_swipes')
     .select('*')
     .eq('pair_id', pairId);
 
+  if (error) console.error('Error fetching pick swipes:', error);
+
   if (remote) {
-    const swipeMap: Record<string, PickSwipe> = {};
     const cardSwipes: Record<string, { userSwipe?: string; partnerSwipe?: string }> = {};
 
     for (const r of remote) {
@@ -204,7 +219,6 @@ export async function fetchAndSavePickSwipes(pairId: string, payload?: any) {
       }
     }
 
-    const db = await getDB();
     for (const cardId of Object.keys(cardSwipes)) {
       const uSwipe = cardSwipes[cardId].userSwipe;
       const pSwipe = cardSwipes[cardId].partnerSwipe;
@@ -220,74 +234,78 @@ export async function fetchAndSavePickSwipes(pairId: string, payload?: any) {
 
       await db.put('pick_swipes', swipeMap[cardId]);
     }
+  }
 
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('u-sync-pick', { detail: swipeMap }));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('u-sync-pick', { detail: swipeMap }));
 
-      if (payload?.new) {
-        const item = payload.new;
-        if (item.user_id !== myUserId && item.swipe === 'right') {
-          window.dispatchEvent(new CustomEvent('u-sync-pick-match', { detail: item.card_id }));
-        }
+    if (payload?.new) {
+      const item = payload.new;
+      if (item.user_id !== myUserId && item.swipe === 'right') {
+        window.dispatchEvent(new CustomEvent('u-sync-pick-match', { detail: item.card_id }));
       }
     }
-    return swipeMap;
   }
-  return {};
+  return swipeMap;
 }
 
 export async function fetchAndSaveNudges(pairId: string, payloadNew?: any, onNudgeCb?: (nudge: NudgeRecord) => void) {
+  const db = await getDB();
+  const existingNudges = await db.getAll('nudges');
+  const localMap = new Map(existingNudges.map((e) => [e.id, e]));
+
   const { data: authData } = await supabase.auth.getUser();
   const myUserId = authData?.user?.id;
 
-  const { data: remote } = await supabase
+  const { data: remote, error } = await supabase
     .from('nudges')
     .select('*')
     .eq('pair_id', pairId)
     .order('timestamp', { ascending: false });
 
+  if (error) console.error('Error fetching nudges:', error);
+
   if (remote) {
-    const db = await getDB();
-    const mapped: NudgeRecord[] = remote.map((r) => ({
-      id: r.id,
-      sender: r.sender === myUserId ? 'You' : 'Partner',
-      emoji: r.emoji || '❤️',
-      label: r.label || 'Thinking of you',
-      timestamp: r.timestamp,
-      viewed: Boolean(r.viewed),
-    }));
-
-    const uniqueMap = new Map<string, NudgeRecord>();
-    mapped.forEach((item) => uniqueMap.set(item.id, item));
-    const deduplicated = Array.from(uniqueMap.values());
-
-    for (const item of deduplicated) {
-      await db.put('nudges', item);
-    }
-
-    if (payloadNew && payloadNew.sender !== myUserId) {
-      Haptics.softTap();
-      const newNudge: NudgeRecord = {
-        id: payloadNew.id,
-        sender: 'Partner',
-        emoji: payloadNew.emoji || '❤️',
-        label: payloadNew.label || 'Thinking of you',
-        timestamp: payloadNew.timestamp,
-        viewed: false,
-      };
-
-      if (onNudgeCb) onNudgeCb(newNudge);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('u-sync-new-nudge', { detail: newNudge }));
-      }
-    }
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('u-sync-nudges', { detail: deduplicated }));
-    }
-    return deduplicated;
+    remote.forEach((r) => {
+      localMap.set(r.id, {
+        id: r.id,
+        sender: r.sender === myUserId ? 'You' : 'Partner',
+        emoji: r.emoji || '❤️',
+        label: r.label || 'Thinking of you',
+        timestamp: r.timestamp,
+        viewed: Boolean(r.viewed),
+      });
+    });
   }
-  return [];
+
+  const merged = Array.from(localMap.values());
+  merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  for (const item of merged) {
+    await db.put('nudges', item);
+  }
+
+  if (payloadNew && payloadNew.sender !== myUserId) {
+    Haptics.softTap();
+    const newNudge: NudgeRecord = {
+      id: payloadNew.id,
+      sender: 'Partner',
+      emoji: payloadNew.emoji || '❤️',
+      label: payloadNew.label || 'Thinking of you',
+      timestamp: payloadNew.timestamp,
+      viewed: false,
+    };
+
+    if (onNudgeCb) onNudgeCb(newNudge);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('u-sync-new-nudge', { detail: newNudge }));
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('u-sync-nudges', { detail: merged }));
+  }
+  return merged;
 }
 
 // ----------------------------------------------------
@@ -480,7 +498,6 @@ export async function submitSparkAnswer(promptId: string, answerText: string): P
   const db = await getDB();
   await db.put('spark_prompts', result);
 
-  // Trigger sync broadcast locally
   fetchAndSaveSpark(pairId).catch(() => {});
 
   return result;
