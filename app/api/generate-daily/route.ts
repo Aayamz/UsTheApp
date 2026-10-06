@@ -25,17 +25,28 @@ export async function POST() {
 
     const aiContent = await generateDailyContent();
 
-    const sparkId = `s-${pair.id}-${today}-${Date.now().toString(36)}`;
+    const sparkId = `s-${pair.id}-${today}`;
+
+    // Fetch existing prompt for today to preserve any already submitted answers
+    const { data: existingSpark } = await dbClient
+      .from('spark_prompts')
+      .select('*')
+      .eq('id', sparkId)
+      .maybeSingle();
+
     const sparkRow = {
       id: sparkId,
       pair_id: pair.id,
       date: today,
       question: aiContent.spark?.question || 'What is a small detail about me that you noticed recently?',
       category: aiContent.spark?.category || 'Connection & Joy',
+      user_answer: existingSpark?.user_answer || null,
+      partner_answer: existingSpark?.partner_answer || null,
+      revealed: Boolean(existingSpark?.revealed || (existingSpark?.user_answer && existingSpark?.partner_answer)),
       source: aiContent.source,
     };
 
-    const { error: sparkErr } = await dbClient.from('spark_prompts').upsert(sparkRow);
+    const { error: sparkErr } = await dbClient.from('spark_prompts').upsert(sparkRow, { onConflict: 'id' });
     if (sparkErr) {
       console.error('Error saving spark prompt to Supabase:', sparkErr.message);
     }
@@ -50,7 +61,7 @@ export async function POST() {
     const cardRows = (aiContent.pick_cards ?? []).map((c: any, i: number) => {
       const deckKey = c.deck || 'food';
       return {
-        id: `p-${pair.id}-${today}-${Date.now().toString(36)}-${i}`,
+        id: `p-${pair.id}-${today}-${i}`,
         pair_id: pair.id,
         date: today,
         deck: deckKey,
@@ -63,7 +74,7 @@ export async function POST() {
     });
 
     if (cardRows.length > 0) {
-      const { error: cardsErr } = await dbClient.from('pick_cards').upsert(cardRows);
+      const { error: cardsErr } = await dbClient.from('pick_cards').upsert(cardRows, { onConflict: 'id' });
       if (cardsErr) {
         console.error('Error saving pick cards to Supabase:', cardsErr.message);
       }

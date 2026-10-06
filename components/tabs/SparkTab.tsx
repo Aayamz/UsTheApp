@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getDB, SparkPrompt } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
-import { syncSparkPrompts, submitSparkAnswer } from '@/lib/pairSync';
+import { syncSparkPrompts, submitSparkAnswer, getActivePairId, fetchAndSaveSpark } from '@/lib/pairSync';
 import { Haptics } from '@/lib/haptics';
 import { 
   Flame, 
@@ -19,13 +19,21 @@ export default function SparkTab() {
   const [prompts, setPrompts] = useState<SparkPrompt[]>([]);
   const [loading, setLoading] = useState(true);
   const [answerInput, setAnswerInput] = useState('');
+  const [generatingAi, setGeneratingAi] = useState(false);
 
   const loadSparkData = async () => {
     try {
       const db = await getDB();
       const all = await db.getAll('spark_prompts');
       all.sort((a, b) => (a.date < b.date ? 1 : -1));
-      setPrompts(all);
+      
+      const uniqueByDate = new Map<string, SparkPrompt>();
+      all.forEach((item) => {
+        if (!uniqueByDate.has(item.date) || item.userAnswer || item.partnerAnswer) {
+          uniqueByDate.set(item.date, item);
+        }
+      });
+      setPrompts(Array.from(uniqueByDate.values()));
     } catch (e) {
       console.error('Failed loading spark prompts:', e);
     } finally {
@@ -37,7 +45,13 @@ export default function SparkTab() {
     loadSparkData();
     let cleanup: (() => void) | undefined;
     syncSparkPrompts((updated) => {
-      setPrompts(updated);
+      const uniqueByDate = new Map<string, SparkPrompt>();
+      updated.forEach((item) => {
+        if (!uniqueByDate.has(item.date) || item.userAnswer || item.partnerAnswer) {
+          uniqueByDate.set(item.date, item);
+        }
+      });
+      setPrompts(Array.from(uniqueByDate.values()));
       setLoading(false);
     }).then((unsub) => {
       cleanup = unsub;
@@ -67,8 +81,6 @@ export default function SparkTab() {
     }
   };
 
-  const [generatingAi, setGeneratingAi] = useState(false);
-
   const handleGenerateAiPrompt = async () => {
     Haptics.lightTap();
     setGeneratingAi(true);
@@ -80,16 +92,19 @@ export default function SparkTab() {
         return;
       }
       if (data.spark) {
-        const newPrompt: SparkPrompt = {
-          id: data.spark.id,
-          date: data.spark.date,
-          question: data.spark.question,
-          category: data.spark.category,
-          revealed: false,
-        };
-        const db = await getDB();
-        await db.put('spark_prompts', newPrompt);
-        setPrompts((prev) => [newPrompt, ...prev.filter((p) => p.date !== newPrompt.date)]);
+        const pairId = await getActivePairId();
+        if (pairId) {
+          const freshPrompts = await fetchAndSaveSpark(pairId);
+          if (freshPrompts) {
+            const uniqueByDate = new Map<string, SparkPrompt>();
+            freshPrompts.forEach((item) => {
+              if (!uniqueByDate.has(item.date) || item.userAnswer || item.partnerAnswer) {
+                uniqueByDate.set(item.date, item);
+              }
+            });
+            setPrompts(Array.from(uniqueByDate.values()));
+          }
+        }
       }
     } catch (e: any) {
       console.error('AI generation failed:', e);
@@ -148,72 +163,71 @@ export default function SparkTab() {
             {activePrompt.revealed ? (
               /* REVEALED STATE (Both Answered!) */
               <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="space-y-4"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4 pt-2 border-t border-[#FF8966]/30"
               >
-                <div className="p-3 bg-[#FF8966]/15 border border-[#FF8966]/40 rounded-2xl flex items-center justify-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#FF8966] animate-spin" />
-                  <span className="text-xs font-bold text-[#FF8966]">Both answered! Answers Revealed 🎉</span>
+                <div className="flex items-center gap-1.5 text-xs text-[#FF8966] font-bold bg-[#FF8966]/15 py-1.5 px-3 rounded-full border border-[#FF8966]/30 w-fit">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Both answered! Answers Revealed 🎉</span>
                 </div>
 
-                {/* Your Answer */}
-                <div className="bg-[#1F1324] p-4 rounded-2xl border border-[#4F3C59]">
-                  <span className="text-[11px] font-bold text-[#FF8966] block mb-1">Your Answer</span>
-                  <p className="text-sm text-[#F6EFE9]">{activePrompt.userAnswer}</p>
-                </div>
+                <div className="space-y-3">
+                  <div className="bg-[#1F1324]/80 p-4 rounded-2xl border border-[#4F3C59]">
+                    <span className="text-[11px] font-bold text-[#FF8966] block mb-1 uppercase tracking-wider">Your Answer</span>
+                    <p className="text-sm text-[#F6EFE9]">{activePrompt.userAnswer || 'No answer submitted'}</p>
+                  </div>
 
-                {/* Partner Answer */}
-                <div className="bg-[#1F1324] p-4 rounded-2xl border border-[#FF8966]/30">
-                  <span className="text-[11px] font-bold text-[#C9B3D1] block mb-1">Partner's Answer</span>
-                  <p className="text-sm text-[#F6EFE9] font-medium">{activePrompt.partnerAnswer}</p>
+                  <div className="bg-[#1F1324]/80 p-4 rounded-2xl border border-[#4F3C59]">
+                    <span className="text-[11px] font-bold text-[#C9B3D1] block mb-1 uppercase tracking-wider">Partner's Answer</span>
+                    <p className="text-sm text-[#F6EFE9]">{activePrompt.partnerAnswer || 'No answer submitted'}</p>
+                  </div>
                 </div>
               </motion.div>
             ) : activePrompt.userAnswer ? (
-              /* WAITING FOR PARTNER STATE */
-              <div className="space-y-4">
-                <div className="bg-[#1F1324] p-4 rounded-2xl border border-[#4F3C59]">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-bold text-[#FF8966]">Your Answer Saved</span>
-                    <CheckCircle2 className="w-4 h-4 text-[#FF8966]" />
+              /* USER SUBMITTED, WAITING FOR PARTNER */
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4 pt-2 border-t border-[#4F3C59]/50"
+              >
+                <div className="bg-[#1F1324]/80 p-4 rounded-2xl border border-[#4F3C59] flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-[#FF8966] block uppercase tracking-wider mb-0.5">Your Answer Saved</span>
+                    <p className="text-sm text-[#F6EFE9] font-medium">{activePrompt.userAnswer}</p>
                   </div>
-                  <p className="text-sm text-[#F6EFE9]">{activePrompt.userAnswer}</p>
+                  <CheckCircle2 className="w-5 h-5 text-[#FF8966]" />
                 </div>
 
-                <div className="p-4 bg-[#1F1324]/60 border border-[#4F3C59] rounded-2xl text-center space-y-2">
-                  <div className="inline-flex items-center justify-center p-3 bg-[#372A3E] rounded-full text-[#FF8966] mb-1">
-                    <Lock className="w-5 h-5 animate-pulse" />
+                <div className="text-center py-6 px-4 bg-[#1F1324]/50 border border-[#4F3C59]/40 rounded-2xl space-y-2">
+                  <div className="inline-flex p-2.5 bg-[#FF8966]/10 text-[#FF8966] rounded-full mb-1">
+                    <Lock className="w-5 h-5" />
                   </div>
-                  <h3 className="text-sm font-bold text-[#F6EFE9]">Waiting for partner to answer</h3>
-                  <p className="text-xs text-[#C9B3D1]">
+                  <h4 className="text-sm font-bold text-[#F6EFE9]">Waiting for partner to answer</h4>
+                  <p className="text-xs text-[#C9B3D1] max-w-xs mx-auto">
                     Answers remain sealed privately until both of you complete today's prompt.
                   </p>
                 </div>
-              </div>
+              </motion.div>
             ) : (
-              /* INPUT FORM STATE */
-              <form onSubmit={handleSubmitAnswer} className="space-y-3">
-                <div className="relative">
-                  <textarea
-                    rows={3}
-                    required
-                    placeholder="Write your private answer..."
-                    value={answerInput}
-                    onChange={(e) => setAnswerInput(e.target.value)}
-                    className="w-full bg-[#1F1324] border border-[#4F3C59] rounded-2xl p-4 text-sm text-[#F6EFE9] focus:outline-none focus:border-[#FF8966] resize-none"
-                  />
-                  <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] text-[#C9B3D1]">
-                    <Lock className="w-3 h-3 text-[#FF8966]" />
-                    Private until both respond
-                  </div>
-                </div>
+              /* UNANSWERED STATE - FORM INPUT */
+              <form onSubmit={handleSubmitAnswer} className="space-y-3 pt-2">
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Type your honest answer here... (kept hidden until partner responds)"
+                  value={answerInput}
+                  onChange={(e) => setAnswerInput(e.target.value)}
+                  className="w-full bg-[#1F1324] border border-[#4F3C59] rounded-2xl p-4 text-sm text-[#F6EFE9] placeholder-[#C9B3D1]/50 focus:outline-none focus:border-[#FF8966] transition-colors resize-none"
+                />
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 bg-[#FF8966] text-[#1F1324] font-bold text-sm rounded-2xl shadow-lg hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  disabled={!answerInput.trim()}
+                  className="w-full py-3.5 bg-gradient-to-r from-[#FF8966] to-[#FF6B4A] text-[#1F1324] font-bold text-sm rounded-2xl shadow-xl hover:brightness-110 active:scale-98 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Send className="w-4 h-4" />
-                  <span>Lock In Answer</span>
+                  <span>Submit Answer Privately</span>
                 </button>
               </form>
             )}
