@@ -87,9 +87,9 @@ function prepareSupabasePayload(store: string, payload: any, userId: string, pai
 
     case 'pick_swipes':
       return {
-        id: payload.id || `ps-${userId}-${payload.cardId || payload.card_id}-${Date.now().toString(36)}`,
+        id: payload.id || `ps-${userId}-${payload.cardId || payload.card_id || 'card'}-${Date.now().toString(36)}`,
         pair_id: commonPairId,
-        card_id: payload.cardId || payload.card_id,
+        card_id: payload.cardId || payload.card_id || null,
         user_id: userId,
         swipe: payload.userSwipe || payload.swipe || 'left',
         matched: !!payload.matched,

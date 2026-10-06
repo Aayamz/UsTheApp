@@ -65,7 +65,7 @@ alter table someday_capsules alter column sealed_by drop not null;
 create table if not exists pick_cards (
   id text primary key,
   pair_id uuid references pairs,
-  date date not null,
+  date date not null default CURRENT_DATE,
   deck text not null,
   title text not null,
   description text,
@@ -79,12 +79,13 @@ alter table pick_cards alter column pair_id drop not null;
 create table if not exists pick_swipes (
   id text primary key,
   pair_id uuid references pairs,
-  card_id text references pick_cards,
+  card_id text,
   user_id uuid references auth.users,
   swipe text not null,
   matched boolean default false,
   timestamp timestamptz default now()
 );
+alter table pick_swipes drop constraint if exists pick_swipes_card_id_fkey;
 alter table pick_swipes alter column pair_id drop not null;
 alter table pick_swipes alter column user_id drop not null;
 
