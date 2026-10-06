@@ -73,7 +73,7 @@ export default function NavigationShell() {
         .eq('id', authData.user.id)
         .maybeSingle();
 
-      let partnerName = 'Partner';
+      let partnerName: string | null = null;
       let isCreator = true;
 
       if (profile?.pair_id) {
@@ -94,9 +94,7 @@ export default function NavigationShell() {
               .eq('id', partnerId)
               .maybeSingle();
 
-            if (partnerProfile?.display_name) {
-              partnerName = partnerProfile.display_name;
-            }
+            partnerName = partnerProfile?.display_name || 'Partner';
           }
         }
       }
@@ -110,12 +108,16 @@ export default function NavigationShell() {
         isOnline: true,
       });
 
+      const spaceTitle = partnerName
+        ? `💕 Couple Space: ${displayName} & ${partnerName}`
+        : `💕 Private Space: ${displayName}`;
+
       const updatedSpaces: GroupSpace[] = [
         {
           id: 'g-1',
-          name: `💕 Couple Space: ${displayName} & ${partnerName}`,
+          name: spaceTitle,
           type: 'couple',
-          memberCount: partnerName !== 'Partner' ? 2 : 1,
+          memberCount: partnerName ? 2 : 1,
         },
         { id: 'g-2', name: '🎉 Group Event Capsules', type: 'group', memberCount: 1 },
       ];
