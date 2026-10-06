@@ -24,7 +24,6 @@ export async function getActivePairId(): Promise<string | null> {
   return active?.id || null;
 }
 
-// Global active channel reference to avoid duplicate subscriptions
 let globalChannel: any = null;
 let currentPairId: string | null = null;
 
@@ -114,19 +113,31 @@ export async function fetchAndSaveSpark(pairId: string) {
       const isPartnerAnswered = Boolean(partnerAnswer);
       const isRevealed = Boolean(r.revealed || (isUserAnswered && isPartnerAnswered));
 
+      const mappedItem: SparkPrompt = {
+        id: canonicalId,
+        date: r.date,
+        question: r.question,
+        category: r.category || 'Connection',
+        userAnswer: myAnswer || undefined,
+        partnerAnswer: partnerAnswer || undefined,
+        revealed: isRevealed,
+        answeredAt: r.answered_at || undefined,
+      };
+
       const existing = dateMap.get(r.date);
-      if (!existing || (!existing.userAnswer && myAnswer) || r.id === canonicalId) {
-        dateMap.set(r.date, {
-          id: canonicalId,
-          date: r.date,
-          question: r.question,
-          category: r.category || 'Connection',
-          userAnswer: myAnswer || undefined,
-          partnerAnswer: partnerAnswer || undefined,
-          revealed: isRevealed,
-          answeredAt: r.answered_at || undefined,
-        });
+      // Canonical row or latest prompt for date always takes priority over legacy rows
+      if (!existing || r.id === canonicalId) {
+        dateMap.set(r.date, mappedItem);
       }
+    }
+  }
+
+  // Purge legacy non-canonical spark prompts from IndexedDB
+  const existingLocal = await db.getAll('spark_prompts');
+  for (const localItem of existingLocal) {
+    const validForDate = dateMap.get(localItem.date);
+    if (!validForDate || localItem.id !== validForDate.id) {
+      await db.delete('spark_prompts', localItem.id);
     }
   }
 

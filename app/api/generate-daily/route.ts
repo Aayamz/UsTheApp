@@ -27,22 +27,25 @@ export async function POST() {
 
     const sparkId = `s-${pair.id}-${today}`;
 
-    // Fetch existing prompt for today to preserve any already submitted answers
-    const { data: existingSpark } = await dbClient
+    // Delete any legacy non-canonical spark prompts for today for this pair
+    await dbClient
       .from('spark_prompts')
-      .select('*')
-      .eq('id', sparkId)
-      .maybeSingle();
+      .delete()
+      .eq('pair_id', pair.id)
+      .eq('date', today)
+      .neq('id', sparkId);
 
+    // Truncate old question/answers and insert fresh daily AI prompt for today
     const sparkRow = {
       id: sparkId,
       pair_id: pair.id,
       date: today,
       question: aiContent.spark?.question || 'What is a small detail about me that you noticed recently?',
       category: aiContent.spark?.category || 'Connection & Joy',
-      user_answer: existingSpark?.user_answer || null,
-      partner_answer: existingSpark?.partner_answer || null,
-      revealed: Boolean(existingSpark?.revealed || (existingSpark?.user_answer && existingSpark?.partner_answer)),
+      user_answer: null,
+      partner_answer: null,
+      revealed: false,
+      answered_at: null,
       source: aiContent.source,
     };
 
