@@ -79,45 +79,62 @@ export default function NavigationShell() {
         email.split('@')[0];
       const avatarUrl = authData.user.user_metadata?.avatar_url || '';
 
-      // 1. Fetch own pairs
-      const { data: ownPairs } = await supabase
-        .from('pairs')
-        .select('id, created_by, partner_id, invite_code')
-        .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`);
+      // 1. Fetch user's primary Couple Pair
+      const { ensurePairForUser, ensureGroupSpaceForPair } = await import('@/lib/pairing');
+      const couplePair = await ensurePairForUser(supabase, authData.user.id);
 
-      // 2. Fetch joined friend spaces
-      const { data: memberRows } = await supabase
+      // Find partner name if partner is connected in couplePair
+      let partnerName: string | null = null;
+      const isCreatorInCouple = couplePair.created_by === authData.user.id;
+      const partnerId = isCreatorInCouple ? couplePair.partner_id : couplePair.created_by;
+
+      if (partnerId && partnerId !== authData.user.id) {
+        const { data: partnerProfile } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', partnerId)
+          .maybeSingle();
+
+        if (partnerProfile?.display_name) {
+          partnerName = partnerProfile.display_name;
+        }
+      }
+
+      // Build Private Couple Space Item (STRICTLY 2 members max, Private to couple)
+      const coupleSpaceTitle = partnerName
+        ? `💕 Couple Space: ${displayName} & ${partnerName}`
+        : `💕 Private Space: ${displayName}`;
+
+      const coupleSpaceItem: GroupSpace = {
+        id: couplePair.id,
+        name: coupleSpaceTitle,
+        type: 'couple',
+        memberCount: partnerName ? 2 : 1,
+      };
+
+      // 2. Fetch or Ensure Group Event Space
+      const groupPair = await ensureGroupSpaceForPair(supabase, couplePair, authData.user.id);
+
+      // Fetch all friend members for group space
+      const { data: groupSm } = await supabase
         .from('space_members')
-        .select('space_id')
-        .eq('user_id', authData.user.id);
+        .select('user_id')
+        .eq('space_id', groupPair.id);
 
-      let joinedPairs: any[] = [];
-      if (memberRows && memberRows.length > 0) {
-        const spaceIds = memberRows.map((m) => m.space_id);
-        const { data: friendPairsData } = await supabase
-          .from('pairs')
-          .select('id, created_by, partner_id, invite_code')
-          .in('id', spaceIds);
-        if (friendPairsData) joinedPairs = friendPairsData;
-      }
+      const groupMemberIds = new Set<string>();
+      if (groupPair.created_by) groupMemberIds.add(groupPair.created_by);
+      if (groupPair.partner_id) groupMemberIds.add(groupPair.partner_id);
+      (groupSm || []).forEach((sm) => groupMemberIds.add(sm.user_id));
 
-      // Combine into unique pair list
-      const pairMap = new Map<string, any>();
-      (ownPairs || []).forEach((p) => pairMap.set(p.id, p));
-      joinedPairs.forEach((p) => pairMap.set(p.id, p));
-      let allPairs = Array.from(pairMap.values());
+      const groupSpaceItem: GroupSpace = {
+        id: groupPair.id,
+        name: '🎉 Group Event Capsules',
+        type: 'group',
+        memberCount: groupMemberIds.size > 0 ? groupMemberIds.size : (partnerName ? 2 : 1),
+      };
 
-      if (allPairs.length === 0) {
-        const { ensurePairForUser } = await import('@/lib/pairing');
-        const createdPair = await ensurePairForUser(supabase, authData.user.id);
-        if (createdPair) allPairs = [createdPair];
-      }
-
-      // Filter out duplicate empty standalone pairs if user has a partnered/joined space
-      const populatedPairs = allPairs.filter(
-        (p) => p.partner_id !== null || p.created_by !== authData.user.id
-      );
-      const activePairsList = populatedPairs.length > 0 ? populatedPairs : [allPairs[0]];
+      const updatedSpaces = [coupleSpaceItem, groupSpaceItem];
+      setSpaces(updatedSpaces);
 
       // Get user profile to check active pair_id preference
       const { data: userProfile } = await supabase
@@ -126,93 +143,33 @@ export default function NavigationShell() {
         .eq('id', authData.user.id)
         .maybeSingle();
 
-      // Build GroupSpace items for each active pair
-      const spaceItems: GroupSpace[] = [];
-      for (const pair of activePairsList) {
-        const { data: spaceMembersData } = await supabase
-          .from('space_members')
-          .select('user_id, role')
-          .eq('space_id', pair.id);
-
-        // Clean up redundant space_members rows for creator/partner
-        const realFriendUserIds = (spaceMembersData || [])
-          .map((sm) => sm.user_id)
-          .filter((id) => id && id !== pair.created_by && id !== pair.partner_id);
-
-        const memberIds = new Set<string>();
-        if (pair.created_by) memberIds.add(pair.created_by);
-        if (pair.partner_id) memberIds.add(pair.partner_id);
-        realFriendUserIds.forEach((id) => memberIds.add(id));
-
-        const memberIdArray = Array.from(memberIds);
-        const { data: memberProfiles } = await supabase
-          .from('profiles')
-          .select('id, display_name')
-          .in('id', memberIdArray);
-
-        const namesMap = new Map<string, string>();
-        (memberProfiles || []).forEach((p) => {
-          if (p.display_name) namesMap.set(p.id, p.display_name);
-        });
-
-        const names = memberIdArray.map((id) =>
-          id === authData.user.id ? displayName : namesMap.get(id) || 'Member'
-        );
-
-        let spaceName = '';
-        let spaceType: 'couple' | 'group' = 'couple';
-
-        if (realFriendUserIds.length > 0 || memberIdArray.length >= 3) {
-          spaceType = 'group';
-          spaceName = `🎉 Friends Space: ${names.join(', ')}`;
-        } else if (memberIdArray.length === 2) {
-          spaceType = 'couple';
-          spaceName = `💕 Couple Space: ${names.join(' & ')}`;
-        } else {
-          spaceType = 'couple';
-          spaceName = `💕 Private Space: ${displayName}`;
-        }
-
-        spaceItems.push({
-          id: pair.id,
-          name: spaceName,
-          type: spaceType,
-          memberCount: memberIdArray.length,
-        });
-      }
-
-      setSpaces(spaceItems);
-
       // Determine active space (preserve existing selection if valid)
       let activeItem: GroupSpace | undefined;
       setActiveSpace((prevActive) => {
-        activeItem = spaceItems.find((s) => s.id === prevActive?.id);
+        activeItem = updatedSpaces.find((s) => s.id === prevActive?.id);
         if (!activeItem && userProfile?.pair_id) {
-          activeItem = spaceItems.find((s) => s.id === userProfile.pair_id);
+          activeItem = updatedSpaces.find((s) => s.id === userProfile.pair_id);
         }
         if (!activeItem) {
-          activeItem = spaceItems[0];
+          activeItem = updatedSpaces[0]; // Default to Private Couple Space
         }
         return activeItem;
       });
 
       // Determine user role in active space
-      const targetActiveId = activeItem?.id || userProfile?.pair_id || activePairsList[0]?.id;
-      const activePairObj = activePairsList.find((p) => p.id === targetActiveId);
+      const activeId = activeItem?.id || userProfile?.pair_id || couplePair.id;
       let role: 'creator' | 'partner' | 'friend' = 'creator';
       let roleLabel = 'Creator / Admin 👑';
 
-      if (activePairObj) {
-        if (activePairObj.created_by === authData.user.id) {
-          role = 'creator';
-          roleLabel = 'Creator / Admin 👑';
-        } else if (activePairObj.partner_id === authData.user.id) {
-          role = 'partner';
-          roleLabel = 'Partner 💖';
-        } else {
-          role = 'friend';
-          roleLabel = 'Friend Member 🥳';
-        }
+      if (activeId === groupPair.id && groupPair.created_by !== authData.user.id && groupPair.partner_id !== authData.user.id) {
+        role = 'friend';
+        roleLabel = 'Friend Member 🥳';
+      } else if (isCreatorInCouple) {
+        role = 'creator';
+        roleLabel = 'Creator / Admin 👑';
+      } else {
+        role = 'partner';
+        roleLabel = 'Partner 💖';
       }
 
       setCurrentUser({

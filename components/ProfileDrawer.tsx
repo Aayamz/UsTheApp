@@ -112,21 +112,23 @@ export default function ProfileDrawer({
         if (pair.created_by) memberIds.add(pair.created_by);
         if (pair.partner_id) memberIds.add(pair.partner_id);
 
-        const { data: spaceMembersData } = await supabase
-          .from('space_members')
-          .select('user_id, role')
-          .eq('space_id', pair.id);
-
         const roleMap = new Map<string, string>();
         if (pair.created_by) roleMap.set(pair.created_by, 'creator');
         if (pair.partner_id) roleMap.set(pair.partner_id, 'partner');
 
-        (spaceMembersData || []).forEach((sm) => {
-          if (sm.user_id !== pair.created_by && sm.user_id !== pair.partner_id) {
-            memberIds.add(sm.user_id);
-            roleMap.set(sm.user_id, sm.role || 'friend');
-          }
-        });
+        if (activeSpace?.type === 'group') {
+          const { data: spaceMembersData } = await supabase
+            .from('space_members')
+            .select('user_id, role')
+            .eq('space_id', pair.id);
+
+          (spaceMembersData || []).forEach((sm) => {
+            if (sm.user_id !== pair.created_by && sm.user_id !== pair.partner_id) {
+              memberIds.add(sm.user_id);
+              roleMap.set(sm.user_id, sm.role || 'friend');
+            }
+          });
+        }
 
         const otherMemberIds = Array.from(memberIds).filter((id) => id !== userData.user.id);
 

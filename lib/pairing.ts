@@ -16,7 +16,7 @@ export async function getMyProfile(supabase: SupabaseClient, userId: string) {
     if (pair) return { ...profile, pair_id: pair.id };
   }
 
-  // 1. Search in pairs table for partnered space
+  // Search in pairs table for partnered space
   const { data: pairs } = await supabase
     .from('pairs')
     .select('id, created_by, partner_id, created_at')
@@ -36,22 +36,6 @@ export async function getMyProfile(supabase: SupabaseClient, userId: string) {
     return { id: userId, pair_id: activePair.id, display_name: profile?.display_name };
   }
 
-  // 2. Search in space_members for joined friend spaces
-  const { data: memberRows } = await supabase
-    .from('space_members')
-    .select('space_id')
-    .eq('user_id', userId);
-
-  if (memberRows && memberRows.length > 0) {
-    const spaceId = memberRows[0].space_id;
-    await supabase.from('profiles').upsert({
-      id: userId,
-      pair_id: spaceId,
-      display_name: profile?.display_name || undefined,
-    });
-    return { id: userId, pair_id: spaceId, display_name: profile?.display_name };
-  }
-
   return profile;
 }
 
@@ -63,7 +47,7 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     authUser?.user?.user_metadata?.name ||
     (userEmail ? userEmail.split('@')[0] : 'User');
 
-  // 1. If user profile already points to a valid pair or space, use it!
+  // 1. If user profile points to a valid pair, check if it's valid
   const { data: profile } = await supabase
     .from('profiles')
     .select('id, pair_id')
@@ -82,7 +66,7 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     }
   }
 
-  // 2. Search for pairs where user is creator or partner - PREFER PARTNERED PAIRS!
+  // 2. Search for pairs - PREFER PARTNERED PAIRS over empty standalone pairs!
   const { data: pairs } = await supabase
     .from('pairs')
     .select('*')
@@ -103,30 +87,7 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     return activePair;
   }
 
-  // 3. Search space_members for friend spaces
-  const { data: memberRows } = await supabase
-    .from('space_members')
-    .select('space_id')
-    .eq('user_id', userId);
-
-  if (memberRows && memberRows.length > 0) {
-    const { data: friendPair } = await supabase
-      .from('pairs')
-      .select('*')
-      .eq('id', memberRows[0].space_id)
-      .maybeSingle();
-
-    if (friendPair) {
-      await supabase.from('profiles').upsert({
-        id: userId,
-        pair_id: friendPair.id,
-        display_name: displayName,
-      });
-      return friendPair;
-    }
-  }
-
-  // 4. Create new pair if none exists
+  // 3. Create new pair if none exists
   const { data: created, error } = await supabase
     .from('pairs')
     .insert({ created_by: userId })
@@ -142,6 +103,53 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
   });
 
   return created;
+}
+
+export async function ensureGroupSpaceForPair(
+  supabase: SupabaseClient,
+  couplePair: { id: string; created_by: string; partner_id: string | null },
+  userId: string
+) {
+  // Check if a secondary group pair already exists for this couple
+  const { data: existingGroupPairs } = await supabase
+    .from('pairs')
+    .select('*')
+    .eq('created_by', couplePair.created_by)
+    .neq('id', couplePair.id);
+
+  if (existingGroupPairs && existingGroupPairs.length > 0) {
+    return existingGroupPairs[0];
+  }
+
+  // Check if user is in space_members for a group space
+  const { data: sm } = await supabase
+    .from('space_members')
+    .select('space_id')
+    .eq('user_id', userId)
+    .neq('space_id', couplePair.id);
+
+  if (sm && sm.length > 0) {
+    const { data: friendPair } = await supabase
+      .from('pairs')
+      .select('*')
+      .eq('id', sm[0].space_id)
+      .maybeSingle();
+
+    if (friendPair) return friendPair;
+  }
+
+  // Create a new dedicated Group Event pair
+  const { data: newGroup, error } = await supabase
+    .from('pairs')
+    .insert({
+      created_by: couplePair.created_by,
+      partner_id: couplePair.partner_id || undefined,
+    })
+    .select()
+    .single();
+
+  if (error || !newGroup) return couplePair;
+  return newGroup;
 }
 
 export async function getPairByInviteCode(supabase: SupabaseClient, code: string) {
