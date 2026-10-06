@@ -372,7 +372,7 @@ export default function ProfileDrawer({
                         <div>
                           <span className="text-sm font-bold text-[#F6EFE9] block">{space.name}</span>
                           <span className="text-[10px] text-[#C9B3D1]">
-                            {space.type === 'couple' ? 'Private Couple Space' : `Group Event • ${space.memberCount} members`}
+                            {space.type === 'couple' ? 'Private Couple Space' : `Group Event • ${space.memberCount} friend${space.memberCount === 1 ? '' : 's'}`}
                           </span>
                         </div>
                       </div>

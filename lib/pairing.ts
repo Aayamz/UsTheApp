@@ -47,38 +47,35 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     authUser?.user?.user_metadata?.name ||
     (userEmail ? userEmail.split('@')[0] : 'User');
 
-  // 1. If user profile points to a valid pair, check if it's valid
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, pair_id')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (profile?.pair_id) {
-    const { data: existingPair } = await supabase
-      .from('pairs')
-      .select('*')
-      .eq('id', profile.pair_id)
-      .maybeSingle();
-
-    if (existingPair) {
-      return existingPair;
-    }
-  }
-
-  // 2. Search for pairs - PREFER PARTNERED PAIRS over empty standalone pairs!
+  // Search for pairs where user is creator or partner
   const { data: pairs } = await supabase
     .from('pairs')
     .select('*')
     .or(`created_by.eq.${userId},partner_id.eq.${userId}`);
 
   if (pairs && pairs.length > 0) {
-    const activePair =
-      pairs.find((p) => p.partner_id !== null) ||
-      pairs.find((p) => p.partner_id === userId) ||
-      pairs.find((p) => p.created_by === userId) ||
-      pairs[0];
+    // PREFER PARTNERED PAIRS (partner_id is not null)
+    const partnered = pairs.find((p) => p.partner_id !== null);
+    if (partnered) {
+      // Clean up any unpartnered pairs created by this user
+      try {
+        await supabase
+          .from('pairs')
+          .delete()
+          .eq('created_by', userId)
+          .is('partner_id', null)
+          .neq('id', partnered.id);
+      } catch {}
 
+      await supabase.from('profiles').upsert({
+        id: userId,
+        pair_id: partnered.id,
+        display_name: displayName,
+      });
+      return partnered;
+    }
+
+    const activePair = pairs.find((p) => p.created_by === userId) || pairs[0];
     await supabase.from('profiles').upsert({
       id: userId,
       pair_id: activePair.id,
@@ -87,7 +84,7 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     return activePair;
   }
 
-  // 3. Create new pair if none exists
+  // Create new pair if none exists
   const { data: created, error } = await supabase
     .from('pairs')
     .insert({ created_by: userId })

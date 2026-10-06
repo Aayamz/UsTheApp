@@ -119,18 +119,18 @@ export default function NavigationShell() {
       const { data: groupSm } = await supabase
         .from('space_members')
         .select('user_id')
-        .eq('space_id', groupPair.id);
+        .eq('space_id', groupPair.id)
+        .eq('role', 'friend');
 
-      const groupMemberIds = new Set<string>();
-      if (groupPair.created_by) groupMemberIds.add(groupPair.created_by);
-      if (groupPair.partner_id) groupMemberIds.add(groupPair.partner_id);
-      (groupSm || []).forEach((sm) => groupMemberIds.add(sm.user_id));
+      const friendCount = (groupSm || []).filter(
+        (sm) => sm.user_id !== couplePair.created_by && sm.user_id !== couplePair.partner_id
+      ).length;
 
       const groupSpaceItem: GroupSpace = {
         id: groupPair.id,
         name: '🎉 Group Event Capsules',
         type: 'group',
-        memberCount: groupMemberIds.size > 0 ? groupMemberIds.size : (partnerName ? 2 : 1),
+        memberCount: friendCount,
       };
 
       const updatedSpaces = [coupleSpaceItem, groupSpaceItem];
