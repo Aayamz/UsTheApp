@@ -46,12 +46,17 @@ create policy "read own profile"
   on profiles for select
   using (id = auth.uid());
 
+create or replace function public.get_my_pair_id()
+returns uuid language sql security definer set search_path = '' as $$
+  select pair_id from public.profiles where id = auth.uid() limit 1;
+$$;
+
 drop policy if exists "read partner profile" on profiles;
 create policy "read partner profile"
   on profiles for select
   using (
     pair_id is not null
-    and pair_id = (select pair_id from profiles p2 where p2.id = auth.uid())
+    and pair_id = public.get_my_pair_id()
   );
 
 drop policy if exists "upsert own profile" on profiles;

@@ -280,9 +280,12 @@ export default function PickTab() {
               {/* Card Image */}
               <div className="relative h-60 w-full overflow-hidden">
                 <img
-                  src={currentCard.image}
+                  src={currentCard.image || FALLBACK_DECK_IMAGES[activeDeck] || FALLBACK_DECK_IMAGES.food}
                   alt={currentCard.title}
                   className="w-full h-full object-cover pointer-events-none"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = FALLBACK_DECK_IMAGES[activeDeck] || FALLBACK_DECK_IMAGES.food;
+                  }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#372A3E] via-transparent to-transparent" />
                 
