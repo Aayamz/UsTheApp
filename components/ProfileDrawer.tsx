@@ -108,6 +108,12 @@ export default function ProfileDrawer({
     };
 
     fetchProfileAndPair().catch((e) => console.log('Error fetching partner:', e));
+
+    const interval = setInterval(() => {
+      fetchProfileAndPair().catch(() => {});
+    }, 3000);
+
+    return () => clearInterval(interval);
   }, [isOpen]);
 
   const handleSignOut = async () => {

@@ -128,6 +128,12 @@ export default function NavigationShell() {
     };
 
     fetchUserData().catch((e) => console.log('Error fetching user data:', e));
+
+    const interval = setInterval(() => {
+      fetchUserData().catch(() => {});
+    }, 4000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const renderActiveTab = () => {

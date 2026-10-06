@@ -32,6 +32,13 @@ export async function getMyProfile(supabase: SupabaseClient, userId: string) {
 }
 
 export async function ensurePairForUser(supabase: SupabaseClient, userId: string) {
+  const { data: authUser } = await supabase.auth.getUser();
+  const userEmail = authUser?.user?.email || '';
+  const displayName =
+    authUser?.user?.user_metadata?.full_name ||
+    authUser?.user?.user_metadata?.name ||
+    (userEmail ? userEmail.split('@')[0] : 'User');
+
   const { data: pairs } = await supabase
     .from('pairs')
     .select('*')
@@ -44,6 +51,7 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
     await supabase.from('profiles').upsert({
       id: userId,
       pair_id: activePair.id,
+      display_name: displayName,
     });
     return activePair;
   }
@@ -60,6 +68,7 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
   await supabase.from('profiles').upsert({
     id: userId,
     pair_id: created.id,
+    display_name: displayName,
   });
 
   return created;
@@ -90,15 +99,22 @@ export async function joinPairByCode(
   const pair = await getPairByInviteCode(supabase, code.trim());
   if (!pair) return null;
 
+  const { data: authUser } = await supabase.auth.getUser();
+  const userEmail = authUser?.user?.email || '';
+  const displayName =
+    authUser?.user?.user_metadata?.full_name ||
+    authUser?.user?.user_metadata?.name ||
+    (userEmail ? userEmail.split('@')[0] : 'Partner');
+
   // Creator clicking their own link
   if (pair.created_by === userId) {
-    await supabase.from('profiles').upsert({ id: userId, pair_id: pair.id });
+    await supabase.from('profiles').upsert({ id: userId, pair_id: pair.id, display_name: displayName });
     return { pair, role: 'creator' };
   }
 
   // User is already registered partner
   if (pair.partner_id === userId) {
-    await supabase.from('profiles').upsert({ id: userId, pair_id: pair.id });
+    await supabase.from('profiles').upsert({ id: userId, pair_id: pair.id, display_name: displayName });
     return { pair, role: 'partner' };
   }
 
@@ -113,7 +129,7 @@ export async function joinPairByCode(
       .single();
 
     if (!error && updated) {
-      await supabase.from('profiles').upsert({ id: userId, pair_id: updated.id });
+      await supabase.from('profiles').upsert({ id: userId, pair_id: updated.id, display_name: displayName });
       try {
         await supabase.from('space_members').upsert({
           space_id: updated.id,
@@ -134,6 +150,6 @@ export async function joinPairByCode(
     });
   } catch {}
 
-  await supabase.from('profiles').upsert({ id: userId, pair_id: pair.id });
+  await supabase.from('profiles').upsert({ id: userId, pair_id: pair.id, display_name: displayName });
   return { pair, role: 'friend' };
 }
