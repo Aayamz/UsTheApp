@@ -66,37 +66,40 @@ export default function NavigationShell() {
         email.split('@')[0];
       const avatarUrl = authData.user.user_metadata?.avatar_url || '';
 
-      // Check pair info
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('pair_id')
-        .eq('id', authData.user.id)
-        .maybeSingle();
+      // Query pairs where user is creator or partner
+      const { data: userPairs } = await supabase
+        .from('pairs')
+        .select('id, created_by, partner_id')
+        .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`)
+        .order('created_at', { ascending: false });
 
       let partnerName: string | null = null;
       let isCreator = true;
 
-      if (profile?.pair_id) {
-        const { data: pair } = await supabase
-          .from('pairs')
-          .select('created_by, partner_id')
-          .eq('id', profile.pair_id)
-          .maybeSingle();
+      const activePair =
+        userPairs?.find((p) => p.partner_id !== null) ||
+        userPairs?.[0] ||
+        null;
 
-        if (pair) {
-          isCreator = pair.created_by === authData.user.id;
-          const partnerId = isCreator ? pair.partner_id : pair.created_by;
+      if (activePair) {
+        // Keep profile.pair_id synced to active pair
+        await supabase
+          .from('profiles')
+          .update({ pair_id: activePair.id })
+          .eq('id', authData.user.id);
 
-          if (partnerId && partnerId !== authData.user.id) {
-            const { data: partnerProfile } = await supabase
-              .from('profiles')
-              .select('display_name')
-              .eq('id', partnerId)
-              .maybeSingle();
+        isCreator = activePair.created_by === authData.user.id;
+        const partnerId = isCreator ? activePair.partner_id : activePair.created_by;
 
-            if (partnerProfile) {
-              partnerName = partnerProfile.display_name || 'Partner';
-            }
+        if (partnerId && partnerId !== authData.user.id) {
+          const { data: partnerProfile } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', partnerId)
+            .maybeSingle();
+
+          if (partnerProfile) {
+            partnerName = partnerProfile.display_name || 'Partner';
           }
         }
       }

@@ -66,43 +66,40 @@ export default function ProfileDrawer({
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('pair_id')
-        .eq('id', userData.user.id)
-        .maybeSingle();
+      const { data: userPairs } = await supabase
+        .from('pairs')
+        .select('id, created_by, partner_id, invite_code')
+        .or(`created_by.eq.${userData.user.id},partner_id.eq.${userData.user.id}`)
+        .order('created_at', { ascending: false });
 
-      if (profile?.pair_id) {
-        const { data: pair } = await supabase
-          .from('pairs')
-          .select('id, created_by, partner_id, invite_code')
-          .eq('id', profile.pair_id)
-          .maybeSingle();
+      const pair =
+        userPairs?.find((p) => p.partner_id !== null) ||
+        userPairs?.[0] ||
+        null;
 
-        if (pair) {
-          setInviteCode(pair.invite_code || '');
+      if (pair) {
+        setInviteCode(pair.invite_code || '');
 
-          const partnerId = pair.created_by === userData.user.id ? pair.partner_id : pair.created_by;
-          if (partnerId && partnerId !== userData.user.id) {
-            const { data: partnerProfile } = await supabase
-              .from('profiles')
-              .select('id, display_name, avatar_url')
-              .eq('id', partnerId)
-              .maybeSingle();
+        const partnerId = pair.created_by === userData.user.id ? pair.partner_id : pair.created_by;
+        if (partnerId && partnerId !== userData.user.id) {
+          const { data: partnerProfile } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .eq('id', partnerId)
+            .maybeSingle();
 
-            if (partnerProfile) {
-              setPartner({
-                id: partnerId,
-                displayName: partnerProfile.display_name || 'Partner',
-                avatarUrl: partnerProfile.avatar_url,
-                isOnline: true,
-              });
-            } else {
-              setPartner(null);
-            }
+          if (partnerProfile) {
+            setPartner({
+              id: partnerId,
+              displayName: partnerProfile.display_name || 'Partner',
+              avatarUrl: partnerProfile.avatar_url,
+              isOnline: true,
+            });
           } else {
             setPartner(null);
           }
+        } else {
+          setPartner(null);
         }
       }
     };

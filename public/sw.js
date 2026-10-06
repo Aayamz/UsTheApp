@@ -1,45 +1,17 @@
-// Workbox Service Worker for U& Couples PWA
-importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');
+// U& Couples Companion Service Worker
+const CACHE_NAME = 'u-and-me-v1';
 
-self.skipWaiting();
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
 
-if (workbox) {
-  workbox.core.clientsClaim();
-  workbox.setConfig({ debug: false });
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
 
-  // Stale-While-Revalidate for static assets (styles, scripts, fonts)
-  workbox.routing.registerRoute(
-    ({ request, url }) =>
-      (request.destination === 'style' ||
-        request.destination === 'script' ||
-        request.destination === 'font') &&
-      !url.pathname.includes('/_next/webpack') &&
-      !url.pathname.includes('/_next/static/chunks/'),
-    new workbox.strategies.StaleWhileRevalidate({
-      cacheName: 'static-resources',
-    })
-  );
-
-  // Cache images using Cache First with expiration
-  workbox.routing.registerRoute(
-    ({ request }) => request.destination === 'image',
-    new workbox.strategies.CacheFirst({
-      cacheName: 'images',
-      plugins: [
-        new workbox.expiration.ExpirationPlugin({
-          maxEntries: 60,
-          maxAgeSeconds: 30 * 24 * 60 * 60, // 30 Days
-        }),
-      ],
-    })
-  );
-
-  // Network-only for page navigation to ensure fresh deployments are loaded immediately
-  workbox.routing.registerRoute(
-    ({ request }) => request.mode === 'navigate',
-    new workbox.strategies.NetworkOnly()
-  );
-}
+self.addEventListener('fetch', (event) => {
+  // Let browser handle normal navigation and API calls directly
+});
 
 // Push notification handling for Spark daily prompts and Nudges
 self.addEventListener('push', (event) => {
