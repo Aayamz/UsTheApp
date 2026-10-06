@@ -309,7 +309,7 @@ export async function fetchAndSaveNudges(pairId: string, payloadNew?: any, onNud
 }
 
 // ----------------------------------------------------
-// APP-WIDE SINGLE PERSISTENT REALTIME LISTENER
+// APP-WIDE SINGLE PERSISTENT REALTIME LISTENER + AUTO-POLLING
 // ----------------------------------------------------
 
 export async function startGlobalPairSync(onNudgeReceived?: (nudge: NudgeRecord) => void) {
@@ -327,54 +327,74 @@ export async function startGlobalPairSync(onNudgeReceived?: (nudge: NudgeRecord)
 
   currentPairId = pairId;
 
-  // Initial silent load of all tables
-  fetchAndSaveTrail(pairId).catch(() => {});
-  fetchAndSaveSpark(pairId).catch(() => {});
-  fetchAndSaveSomeday(pairId).catch(() => {});
-  fetchAndSavePickSwipes(pairId).catch(() => {});
-  fetchAndSaveNudges(pairId).catch(() => {});
+  const refreshAll = () => {
+    if (!currentPairId) return;
+    fetchAndSaveTrail(currentPairId).catch(() => {});
+    fetchAndSaveSpark(currentPairId).catch(() => {});
+    fetchAndSaveSomeday(currentPairId).catch(() => {});
+    fetchAndSavePickSwipes(currentPairId).catch(() => {});
+    fetchAndSaveNudges(currentPairId).catch(() => {});
+  };
 
-  // Subscribe ONCE to a clean channel instance with all handlers chained BEFORE .subscribe()
+  // Initial load
+  refreshAll();
+
+  // Auto-polling loop (every 3s) guarantees instant live sync across accounts with zero tab switching
+  const pollInterval = setInterval(() => {
+    refreshAll();
+  }, 3000);
+
+  // Broad WebSocket listeners for the active pair
   const channelName = `rt-global-${pairId}`;
   const channel = supabase.channel(channelName);
 
   channel
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'trail_entries', filter: `pair_id=eq.${pairId}` },
-      () => {
-        fetchAndSaveTrail(pairId).catch(() => {});
-      }
-    )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'spark_prompts', filter: `pair_id=eq.${pairId}` },
-      (payload) => {
-        if (payload.new && (payload.new as any).revealed) {
-          Haptics.sparkReveal();
+      { event: '*', schema: 'public', table: 'trail_entries' },
+      (payload: any) => {
+        if (payload.new?.pair_id === pairId || payload.old?.pair_id === pairId) {
+          fetchAndSaveTrail(pairId).catch(() => {});
         }
-        fetchAndSaveSpark(pairId).catch(() => {});
       }
     )
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'someday_capsules', filter: `pair_id=eq.${pairId}` },
-      () => {
-        fetchAndSaveSomeday(pairId).catch(() => {});
+      { event: '*', schema: 'public', table: 'spark_prompts' },
+      (payload: any) => {
+        if (payload.new?.pair_id === pairId || payload.old?.pair_id === pairId) {
+          if (payload.new && payload.new.revealed) {
+            Haptics.sparkReveal();
+          }
+          fetchAndSaveSpark(pairId).catch(() => {});
+        }
       }
     )
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'pick_swipes', filter: `pair_id=eq.${pairId}` },
-      (payload) => {
-        fetchAndSavePickSwipes(pairId, payload).catch(() => {});
+      { event: '*', schema: 'public', table: 'someday_capsules' },
+      (payload: any) => {
+        if (payload.new?.pair_id === pairId || payload.old?.pair_id === pairId) {
+          fetchAndSaveSomeday(pairId).catch(() => {});
+        }
       }
     )
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'nudges', filter: `pair_id=eq.${pairId}` },
-      (payload) => {
-        fetchAndSaveNudges(pairId, payload.new, onNudgeReceived).catch(() => {});
+      { event: '*', schema: 'public', table: 'pick_swipes' },
+      (payload: any) => {
+        if (payload.new?.pair_id === pairId || payload.old?.pair_id === pairId) {
+          fetchAndSavePickSwipes(pairId, payload).catch(() => {});
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'nudges' },
+      (payload: any) => {
+        if (payload.new?.pair_id === pairId) {
+          fetchAndSaveNudges(pairId, payload.new, onNudgeReceived).catch(() => {});
+        }
       }
     )
     .subscribe();
@@ -382,6 +402,7 @@ export async function startGlobalPairSync(onNudgeReceived?: (nudge: NudgeRecord)
   globalChannel = channel;
 
   return () => {
+    clearInterval(pollInterval);
     if (globalChannel) {
       supabase.removeChannel(globalChannel);
       globalChannel = null;

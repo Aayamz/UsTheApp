@@ -170,3 +170,14 @@ begin
     );
   end loop;
 end $$;
+
+-- Enable Supabase Realtime replication on all activity tables
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE space_members, trail_entries, spark_prompts, someday_capsules, pick_cards, pick_swipes, nudges;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  -- Table already in publication or alter handled
+  NULL;
+END $$;

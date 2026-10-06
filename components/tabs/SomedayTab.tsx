@@ -6,6 +6,7 @@ import { getDB, SomedayCapsule } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
 import { syncSomedayCapsules } from '@/lib/pairSync';
 import { Haptics } from '@/lib/haptics';
+import { supabase } from '@/lib/supabase';
 import { 
   Lock, 
   Unlock, 
@@ -22,6 +23,7 @@ export default function SomedayTab() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [openedCapsuleId, setOpenedCapsuleId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Form states
   const [title, setTitle] = useState('');
@@ -45,6 +47,10 @@ export default function SomedayTab() {
   };
 
   useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.id) setCurrentUserId(data.user.id);
+    });
+
     loadCapsules();
     let cleanup: (() => void) | undefined;
     syncSomedayCapsules((updated) => {
@@ -58,6 +64,13 @@ export default function SomedayTab() {
       if (cleanup) cleanup();
     };
   }, []);
+
+  const formatSealedBy = (sealedBy?: string) => {
+    if (!sealedBy) return 'Partner';
+    if (sealedBy === 'You' || (currentUserId && sealedBy === currentUserId)) return 'You';
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(sealedBy)) return 'Partner';
+    return sealedBy;
+  };
 
   const handleCreateCapsule = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,7 +89,7 @@ export default function SomedayTab() {
       unlockDate: unlockTarget,
       mediaType,
       mediaUrl: mediaUrl.trim() || undefined,
-      sealedBy: 'You',
+      sealedBy: currentUserId || 'You',
       isUnlocked: false,
       createdAt: new Date().toISOString(),
       isEventScoped: Boolean(eventName.trim()),
@@ -119,6 +132,8 @@ export default function SomedayTab() {
     await queueMutation('someday_capsules', 'update', updatedCapsule);
   };
 
+  const todayLocalStr = new Date().toLocaleDateString('sv-SE');
+
   return (
     <div className="flex-1 overflow-y-auto pb-24 safe-pt px-4 max-w-md mx-auto w-full">
       {/* Header */}
@@ -157,7 +172,8 @@ export default function SomedayTab() {
       ) : (
         <div className="space-y-5 my-3">
           {capsules.map((item) => {
-            const isTargetReached = new Date(item.unlockDate).getTime() <= Date.now();
+            const targetDateStr = item.unlockDate ? item.unlockDate.split('T')[0] : '';
+            const isTargetReached = (targetDateStr && targetDateStr <= todayLocalStr) || new Date(item.unlockDate).getTime() <= Date.now();
             const isOpenable = isTargetReached && !item.isUnlocked;
 
             return (
@@ -185,7 +201,9 @@ export default function SomedayTab() {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h3 className="text-lg font-bold text-[#F6EFE9]">{item.title}</h3>
-                    <p className="text-xs text-[#C9B3D1]">Sealed by {item.sealedBy} • {new Date(item.createdAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-[#C9B3D1]">
+                      Sealed by {formatSealedBy(item.sealedBy)} • {new Date(item.createdAt).toLocaleDateString()}
+                    </p>
                   </div>
 
                   <div className={`p-2.5 rounded-2xl ${item.isUnlocked ? 'bg-[#FF8966]/20 text-[#FF8966]' : 'bg-[#1F1324] text-[#C9B3D1]'}`}>
@@ -193,7 +211,7 @@ export default function SomedayTab() {
                   </div>
                 </div>
 
-                {/* Unlocked State vs Sealed State */}
+                {/* Unlocked State vs Target Reached vs Sealed State */}
                 {item.isUnlocked ? (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
@@ -247,7 +265,7 @@ export default function SomedayTab() {
         </div>
       )}
 
-      {/* Create Capsule Modal with High Z-Index & Extra Scroll Margin */}
+      {/* Create Capsule Modal */}
       <AnimatePresence>
         {showCreateModal && (
           <motion.div
