@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { getDB, TrailEntry, SparkPrompt, SomedayCapsule, PickSwipe, NudgeRecord, PickCard } from './db';
+import { getDB, TrailEntry, SparkPrompt, SomedayCapsule, PickSwipe, NudgeRecord } from './db';
 import { Haptics } from './haptics';
 
 export async function getActivePairId(): Promise<string | null> {
@@ -25,7 +25,7 @@ export async function getActivePairId(): Promise<string | null> {
 }
 
 // ----------------------------------------------------
-// 1. TRAIL ENTRIES SYNC
+// 1. TRAIL ENTRIES SYNC (Deduplicated & Preserves likedByMe)
 // ----------------------------------------------------
 export async function syncTrailEntries(onUpdate: (entries: TrailEntry[]) => void) {
   const pairId = await getActivePairId();
@@ -40,31 +40,43 @@ export async function syncTrailEntries(onUpdate: (entries: TrailEntry[]) => void
 
     if (remote && remote.length > 0) {
       const db = await getDB();
-      const mapped: TrailEntry[] = remote.map((r) => ({
-        id: r.id,
-        type: (r.type as any) || 'moment',
-        title: r.title,
-        description: r.description || undefined,
-        imageUrl: r.image_url || undefined,
-        date: r.date,
-        partner: r.partner || 'Partner',
-        likesCount: r.likes_count || 0,
-        likedByMe: false,
-        tags: r.tags || [],
-        countdownTarget: r.countdown_target || undefined,
-        location: r.location || undefined,
-      }));
+      const existingLocal = await db.getAll('trail_entries');
+      const localMap = new Map(existingLocal.map((e) => [e.id, e]));
 
-      for (const item of mapped) {
+      const mapped: TrailEntry[] = remote.map((r) => {
+        const localItem = localMap.get(r.id);
+        const likedByMe = localItem ? Boolean(localItem.likedByMe) : false;
+
+        return {
+          id: r.id,
+          type: (r.type as any) || 'moment',
+          title: r.title,
+          description: r.description || undefined,
+          imageUrl: r.image_url || undefined,
+          date: r.date,
+          partner: r.partner || 'Partner',
+          likesCount: r.likes_count || 0,
+          likedByMe: likedByMe,
+          tags: r.tags || [],
+          countdownTarget: r.countdown_target || undefined,
+          location: r.location || undefined,
+        };
+      });
+
+      // Deduplicate by ID to prevent duplicate items in UI
+      const uniqueMap = new Map<string, TrailEntry>();
+      mapped.forEach((item) => uniqueMap.set(item.id, item));
+      const deduplicated = Array.from(uniqueMap.values());
+
+      for (const item of deduplicated) {
         await db.put('trail_entries', item);
       }
-      onUpdate(mapped);
+      onUpdate(deduplicated);
     }
   };
 
   await fetchRemote();
 
-  // Realtime subscription
   const channel = supabase
     .channel(`realtime-trail-${pairId}`)
     .on(
@@ -82,7 +94,7 @@ export async function syncTrailEntries(onUpdate: (entries: TrailEntry[]) => void
 }
 
 // ----------------------------------------------------
-// 2. SPARK PROMPTS SYNC & DUAL REVEAL
+// 2. SPARK PROMPTS SYNC & ROLE-BASED DUAL REVEAL
 // ----------------------------------------------------
 export async function syncSparkPrompts(onUpdate: (prompts: SparkPrompt[]) => void) {
   const pairId = await getActivePairId();
@@ -90,8 +102,17 @@ export async function syncSparkPrompts(onUpdate: (prompts: SparkPrompt[]) => voi
 
   const { data: authData } = await supabase.auth.getUser();
   const userId = authData?.user?.id;
+  if (!userId) return;
 
   const fetchRemote = async () => {
+    const { data: pair } = await supabase
+      .from('pairs')
+      .select('created_by, partner_id')
+      .eq('id', pairId)
+      .maybeSingle();
+
+    const isCreator = pair?.created_by === userId;
+
     const { data: remote } = await supabase
       .from('spark_prompts')
       .select('*')
@@ -101,18 +122,21 @@ export async function syncSparkPrompts(onUpdate: (prompts: SparkPrompt[]) => voi
     if (remote && remote.length > 0) {
       const db = await getDB();
       const mapped: SparkPrompt[] = remote.map((r) => {
-        // Evaluate user vs partner answer based on pair role
-        const isUserAnswer = r.user_answer !== null;
-        const isPartnerAnswer = r.partner_answer !== null;
-        const isRevealed = Boolean(r.revealed || (isUserAnswer && isPartnerAnswer));
+        // Correct answer attribution: creator vs partner
+        const myAnswer = isCreator ? r.user_answer : r.partner_answer;
+        const partnerAnswer = isCreator ? r.partner_answer : r.user_answer;
+
+        const isUserAnswered = Boolean(myAnswer);
+        const isPartnerAnswered = Boolean(partnerAnswer);
+        const isRevealed = Boolean(r.revealed || (isUserAnswered && isPartnerAnswered));
 
         return {
           id: r.id,
           date: r.date,
           question: r.question,
           category: r.category || 'Connection',
-          userAnswer: r.user_answer || undefined,
-          partnerAnswer: r.partner_answer || undefined,
+          userAnswer: myAnswer || undefined,
+          partnerAnswer: partnerAnswer || undefined,
           revealed: isRevealed,
           answeredAt: r.answered_at || undefined,
         };
@@ -127,7 +151,6 @@ export async function syncSparkPrompts(onUpdate: (prompts: SparkPrompt[]) => voi
 
   await fetchRemote();
 
-  // Realtime subscription
   const channel = supabase
     .channel(`realtime-spark-${pairId}`)
     .on(
@@ -155,19 +178,24 @@ export async function submitSparkAnswer(promptId: string, answerText: string): P
   const userId = authData?.user?.id;
   if (!userId) return null;
 
-  const { data: pair } = await supabase.from('pairs').select('created_by, partner_id').eq('id', pairId).single();
+  const { data: pair } = await supabase
+    .from('pairs')
+    .select('created_by, partner_id')
+    .eq('id', pairId)
+    .maybeSingle();
+
   const isCreator = pair?.created_by === userId;
 
-  // Check existing prompt in Supabase
+  // Fetch existing row to preserve previous partner answer
   const { data: existing } = await supabase
     .from('spark_prompts')
     .select('*')
     .eq('id', promptId)
     .maybeSingle();
 
-  let userAnswer = isCreator ? answerText : existing?.user_answer || null;
-  let partnerAnswer = !isCreator ? answerText : existing?.partner_answer || null;
-  let isRevealed = Boolean(userAnswer && partnerAnswer);
+  let newUserAnswer = isCreator ? answerText : existing?.user_answer || null;
+  let newPartnerAnswer = !isCreator ? answerText : existing?.partner_answer || null;
+  let isRevealed = Boolean(newUserAnswer && newPartnerAnswer);
 
   const payload = {
     id: promptId,
@@ -175,17 +203,15 @@ export async function submitSparkAnswer(promptId: string, answerText: string): P
     date: existing?.date || new Date().toISOString().split('T')[0],
     question: existing?.question || 'What made you smile today?',
     category: existing?.category || 'Intimacy',
-    user_answer: userAnswer,
-    partner_answer: partnerAnswer,
+    user_answer: newUserAnswer,
+    partner_answer: newPartnerAnswer,
     revealed: isRevealed,
     answered_at: new Date().toISOString(),
   };
 
-  const { data: saved, error } = await supabase
+  const { error } = await supabase
     .from('spark_prompts')
-    .upsert(payload, { onConflict: 'id' })
-    .select()
-    .single();
+    .upsert(payload, { onConflict: 'id' });
 
   if (error) console.error('Error saving spark answer:', error);
 
@@ -198,8 +224,8 @@ export async function submitSparkAnswer(promptId: string, answerText: string): P
     date: payload.date,
     question: payload.question,
     category: payload.category,
-    userAnswer: userAnswer || undefined,
-    partnerAnswer: partnerAnswer || undefined,
+    userAnswer: answerText,
+    partnerAnswer: isCreator ? (existing?.partner_answer || undefined) : (existing?.user_answer || undefined),
     revealed: isRevealed,
     answeredAt: payload.answered_at,
   };
@@ -240,10 +266,15 @@ export async function syncSomedayCapsules(onUpdate: (capsules: SomedayCapsule[])
         contributors: [],
       }));
 
-      for (const item of mapped) {
+      // Deduplicate by ID
+      const uniqueMap = new Map<string, SomedayCapsule>();
+      mapped.forEach((item) => uniqueMap.set(item.id, item));
+      const deduplicated = Array.from(uniqueMap.values());
+
+      for (const item of deduplicated) {
         await db.put('someday_capsules', item);
       }
-      onUpdate(mapped);
+      onUpdate(deduplicated);
     }
   };
 
@@ -347,7 +378,7 @@ export async function syncPickSwipes(
 }
 
 // ----------------------------------------------------
-// 5. NUDGES INSTANT REALTIME
+// 5. NUDGES REALTIME SYNC
 // ----------------------------------------------------
 export async function syncNudges(
   onNewNudge: (nudge: NudgeRecord) => void,
@@ -377,10 +408,15 @@ export async function syncNudges(
         viewed: Boolean(r.viewed),
       }));
 
-      for (const item of mapped) {
+      // Deduplicate by ID
+      const uniqueMap = new Map<string, NudgeRecord>();
+      mapped.forEach((item) => uniqueMap.set(item.id, item));
+      const deduplicated = Array.from(uniqueMap.values());
+
+      for (const item of deduplicated) {
         await db.put('nudges', item);
       }
-      onUpdateList(mapped);
+      onUpdateList(deduplicated);
     }
   };
 
