@@ -65,6 +65,23 @@ let currentPairId: string | null = null;
 
 export async function fetchAndSaveTrail(pairId: string) {
   const db = await getDB();
+  const { data: authData } = await supabase.auth.getUser();
+  const currentUserId = authData?.user?.id;
+
+  let partnerDisplayName = 'Partner';
+  if (currentUserId && pairId) {
+    const { data: partnerProfile } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('pair_id', pairId)
+      .neq('id', currentUserId)
+      .maybeSingle();
+
+    if (partnerProfile?.display_name) {
+      partnerDisplayName = partnerProfile.display_name;
+    }
+  }
+
   const existingLocal = await db.getAll('trail_entries');
   const localMap = new Map(existingLocal.map((e) => [e.id, e]));
 
@@ -81,6 +98,13 @@ export async function fetchAndSaveTrail(pairId: string) {
       const localItem = localMap.get(r.id);
       const likedByMe = localItem ? Boolean(localItem.likedByMe) : false;
 
+      const isMine =
+        (r.created_by && r.created_by === currentUserId) ||
+        (r.partner && r.partner === currentUserId) ||
+        (localItem?.partner === 'You' && (!r.partner || r.partner === 'You' || r.partner === currentUserId));
+
+      const authorName = isMine ? 'You' : partnerDisplayName;
+
       localMap.set(r.id, {
         id: r.id,
         type: (r.type as any) || 'moment',
@@ -88,7 +112,7 @@ export async function fetchAndSaveTrail(pairId: string) {
         description: r.description || undefined,
         imageUrl: r.image_url || undefined,
         date: r.date,
-        partner: r.partner || 'Partner',
+        partner: authorName,
         likesCount: r.likes_count ?? 0,
         likedByMe,
         tags: r.tags || [],
