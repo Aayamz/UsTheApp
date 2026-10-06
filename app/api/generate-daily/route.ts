@@ -3,7 +3,14 @@ import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { createSupabaseAdminClient } from '@/lib/supabase-admin';
 import { ensurePairForUser } from '@/lib/pairing';
 
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MODELS = [
+  'llama-3.1-8b-instant',
+  process.env.GROQ_MODEL,
+  'llama-3.3-70b-versatile',
+  'llama-3.1-70b-versatile',
+  'llama3-70b-8192',
+  'mixtral-8x7b-32768',
+].filter(Boolean) as string[];
 
 async function askGroq(prompt: string) {
   const apiKey = process.env.GROQ_API_KEY;
@@ -11,31 +18,43 @@ async function askGroq(prompt: string) {
     throw new Error('GROQ_API_KEY environment variable is not configured in Vercel settings.');
   }
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
-      temperature: 0.9,
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Groq API returned HTTP ${res.status}: ${errText}`);
+  for (const model of GROQ_MODELS) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          temperature: 0.9,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Model ${model} returned HTTP ${res.status}: ${errText}`);
+      }
+
+      const data = await res.json();
+      const rawContent = data.choices?.[0]?.message?.content;
+      if (!rawContent) {
+        throw new Error(`Empty response from Groq API using ${model}`);
+      }
+
+      return JSON.parse(rawContent);
+    } catch (err: any) {
+      console.warn(`Attempt with Groq model ${model} failed:`, err.message);
+      lastError = err;
+    }
   }
 
-  const data = await res.json();
-  const rawContent = data.choices?.[0]?.message?.content;
-  if (!rawContent) {
-    throw new Error('Empty response from Groq API');
-  }
-  return JSON.parse(rawContent);
+  throw lastError || new Error('All Groq AI models failed');
 }
 
 function buildPrompt() {
