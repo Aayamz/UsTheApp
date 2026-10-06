@@ -104,14 +104,14 @@ export async function fetchAndSaveTrail(pairId: string) {
       const likedByMe = localItem ? Boolean(localItem.likedByMe) : false;
 
       // Determine whether r was authored by current user or partner
-      const authorId = r.created_by || (isValidUuid(r.partner) ? r.partner : null);
       let isMine = false;
 
-      if (authorId && currentUserId) {
-        isMine = authorId === currentUserId;
-      } else if (!authorId && currentUserId) {
-        // If row lacks creator UUID, fallback to local creation check
-        isMine = localItem?.partner === 'You' && r.partner === 'You';
+      if (isValidUuid(r.partner) && currentUserId) {
+        isMine = r.partner === currentUserId;
+      } else if (currentUserId) {
+        // Fallback for legacy entries without UUID partner field:
+        // If local draft was created on this browser instance during this session
+        isMine = Boolean(localItem && (localItem.partner === 'You' || localItem.partner === currentUserId) && (!r.partner || r.partner === 'You'));
       }
 
       const authorName = isMine ? 'You' : partnerDisplayName;
@@ -131,11 +131,11 @@ export async function fetchAndSaveTrail(pairId: string) {
         location: r.location || undefined,
       });
 
-      // Auto-migrate legacy rows lacking created_by in Supabase
-      if (!r.created_by && currentUserId && isMine) {
+      // Update legacy rows in Supabase to save author's UUID in partner column
+      if (!isValidUuid(r.partner) && currentUserId && isMine) {
         supabase
           .from('trail_entries')
-          .update({ created_by: currentUserId, partner: currentUserId })
+          .update({ partner: currentUserId })
           .eq('id', r.id)
           .then(() => {});
       }

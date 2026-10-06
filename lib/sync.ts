@@ -38,7 +38,6 @@ function prepareSupabasePayload(store: string, payload: any, userId: string, pai
       return {
         id: payload.id || `t-${Date.now()}`,
         pair_id: commonPairId,
-        created_by: authorUuid,
         type: payload.type || 'moment',
         title: payload.title,
         description: payload.description || null,
