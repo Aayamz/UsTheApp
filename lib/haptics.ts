@@ -22,6 +22,7 @@ export const Haptics = {
 
   // Nudge send/receive (soft tap: [30])
   nudgeSent: () => triggerHaptic(30),
+  softTap: () => triggerHaptic(30),
 
   // Standard interactive micro-tap
   lightTap: () => triggerHaptic(15),

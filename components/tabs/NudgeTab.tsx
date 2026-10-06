@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDB, NudgeRecord } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
+import { syncNudges } from '@/lib/pairSync';
 import { Haptics } from '@/lib/haptics';
 import { Heart, Sparkles, Send, Clock, Check } from 'lucide-react';
 
@@ -34,6 +35,24 @@ export default function NudgeTab() {
 
   useEffect(() => {
     loadNudges();
+    let cleanup: (() => void) | undefined;
+
+    syncNudges(
+      (newNudge) => {
+        setRipples((prev) => [...prev, Date.now()]);
+        setLastSentText(`Partner sent ${newNudge.emoji} ${newNudge.label}!`);
+        setTimeout(() => setLastSentText(null), 3500);
+      },
+      (updatedList) => {
+        setNudges(updatedList);
+      }
+    ).then((unsub) => {
+      cleanup = unsub;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
   const handleSendNudge = async () => {

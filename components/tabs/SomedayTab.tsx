@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDB, SomedayCapsule } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
+import { syncSomedayCapsules } from '@/lib/pairSync';
 import { Haptics } from '@/lib/haptics';
 import { 
   Lock, 
@@ -45,6 +46,17 @@ export default function SomedayTab() {
 
   useEffect(() => {
     loadCapsules();
+    let cleanup: (() => void) | undefined;
+    syncSomedayCapsules((updated) => {
+      setCapsules(updated);
+      setLoading(false);
+    }).then((unsub) => {
+      cleanup = unsub;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
   const handleCreateCapsule = async (e: React.FormEvent) => {

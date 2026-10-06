@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getDB, SparkPrompt } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
+import { syncSparkPrompts, submitSparkAnswer } from '@/lib/pairSync';
 import { Haptics } from '@/lib/haptics';
 import { 
   Flame, 
@@ -34,6 +35,17 @@ export default function SparkTab() {
 
   useEffect(() => {
     loadSparkData();
+    let cleanup: (() => void) | undefined;
+    syncSparkPrompts((updated) => {
+      setPrompts(updated);
+      setLoading(false);
+    }).then((unsub) => {
+      cleanup = unsub;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -44,28 +56,15 @@ export default function SparkTab() {
     if (!answerInput.trim() || !activePrompt) return;
 
     Haptics.lightTap();
-
-    const isBothNowAnswered = Boolean(activePrompt.partnerAnswer);
-    const updatedPrompt: SparkPrompt = {
-      ...activePrompt,
-      userAnswer: answerInput.trim(),
-      revealed: isBothNowAnswered,
-      answeredAt: new Date().toISOString(),
-    };
-
-    if (isBothNowAnswered) {
-      Haptics.sparkReveal();
-    }
-
-    // Optimistic UI update
-    setPrompts((prev) =>
-      prev.map((item) => (item.id === activePrompt.id ? updatedPrompt : item))
-    );
+    const text = answerInput.trim();
     setAnswerInput('');
 
-    const db = await getDB();
-    await db.put('spark_prompts', updatedPrompt);
-    await queueMutation('spark_prompts', 'update', updatedPrompt);
+    const updated = await submitSparkAnswer(activePrompt.id, text);
+    if (updated) {
+      setPrompts((prev) =>
+        prev.map((item) => (item.id === activePrompt.id ? updated : item))
+      );
+    }
   };
 
   const [generatingAi, setGeneratingAi] = useState(false);

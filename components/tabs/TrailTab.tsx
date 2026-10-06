@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDB, TrailEntry } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
+import { syncTrailEntries } from '@/lib/pairSync';
 import { Haptics } from '@/lib/haptics';
 import { 
   Plus, 
@@ -44,6 +45,17 @@ export default function TrailTab() {
 
   useEffect(() => {
     loadTrailData();
+    let cleanup: (() => void) | undefined;
+    syncTrailEntries((updated) => {
+      setEntries(updated);
+      setLoading(false);
+    }).then((unsub) => {
+      cleanup = unsub;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
   const handleLike = async (id: string, currentLikes: number, currentlyLiked?: boolean) => {

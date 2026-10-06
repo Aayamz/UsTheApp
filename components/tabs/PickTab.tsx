@@ -6,6 +6,7 @@ import { useDrag } from '@use-gesture/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDB, PickCard, PickSwipe } from '@/lib/db';
 import { queueMutation } from '@/lib/sync';
+import { syncPickSwipes } from '@/lib/pairSync';
 import { Haptics } from '@/lib/haptics';
 import { 
   Heart, 
@@ -73,6 +74,28 @@ export default function PickTab() {
 
   useEffect(() => {
     loadDeckData();
+    let cleanup: (() => void) | undefined;
+
+    syncPickSwipes(
+      async (matchedCardId) => {
+        const db = await getDB();
+        const card = await db.get('pick_cards', matchedCardId);
+        if (card) {
+          Haptics.pickMatch();
+          setMatchCard(card);
+          setMatchedList((prev) => [...prev.filter((c) => c.id !== card.id), card]);
+        }
+      },
+      (updatedSwipes) => {
+        setSwipes(updatedSwipes);
+      }
+    ).then((unsub) => {
+      cleanup = unsub;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, [activeDeck]);
 
   const currentCard = cards[currentIndex];
