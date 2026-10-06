@@ -149,6 +149,37 @@ export default function PickTab() {
     api.start({ x: 0, y: 0, rotate: 0, scale: 1, immediate: true });
   };
 
+  const [generatingAi, setGeneratingAi] = useState(false);
+
+  const handleGenerateAiCards = async () => {
+    Haptics.lightTap();
+    setGeneratingAi(true);
+    try {
+      const res = await fetch('/api/generate-daily', { method: 'POST' });
+      const data = await res.json();
+      if (data.pick_cards && data.pick_cards.length > 0) {
+        const db = await getDB();
+        for (const card of data.pick_cards) {
+          const cardObj: PickCard = {
+            id: card.id,
+            deck: card.deck,
+            title: card.title,
+            description: card.description,
+            image: card.image,
+            tags: card.tags,
+            rating: '4.9 ★',
+          };
+          await db.put('pick_cards', cardObj);
+        }
+        await loadDeckData();
+      }
+    } catch (e) {
+      console.error('Failed generating AI cards:', e);
+    } finally {
+      setGeneratingAi(false);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-hidden pb-24 safe-pt px-4 max-w-md mx-auto w-full flex flex-col justify-between">
       {/* Top Deck Selector */}
@@ -159,13 +190,23 @@ export default function PickTab() {
             <h1 className="text-2xl font-bold text-[#F6EFE9]">Pick Deck</h1>
           </div>
 
-          <button
-            onClick={() => setShowMatchesModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FF8966]/15 border border-[#FF8966]/40 rounded-full text-xs font-bold text-[#FF8966] active:scale-95 cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Matches ({matchedList.length})</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleGenerateAiCards}
+              disabled={generatingAi}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FF8966]/15 hover:bg-[#FF8966]/25 border border-[#FF8966]/40 rounded-full text-xs font-bold text-[#FF8966] transition-all active:scale-95 cursor-pointer"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${generatingAi ? 'animate-spin' : ''}`} />
+              <span>{generatingAi ? 'Generating...' : 'Groq AI ✨'}</span>
+            </button>
+
+            <button
+              onClick={() => setShowMatchesModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#372A3E] border border-[#4F3C59] rounded-full text-xs font-bold text-[#F6EFE9] active:scale-95 cursor-pointer"
+            >
+              <span>Matches ({matchedList.length})</span>
+            </button>
+          </div>
         </div>
 
         {/* Deck Category Tabs */}

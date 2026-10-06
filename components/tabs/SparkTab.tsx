@@ -68,6 +68,33 @@ export default function SparkTab() {
     await queueMutation('spark_prompts', 'update', updatedPrompt);
   };
 
+  const [generatingAi, setGeneratingAi] = useState(false);
+
+  const handleGenerateAiPrompt = async () => {
+    Haptics.lightTap();
+    setGeneratingAi(true);
+    try {
+      const res = await fetch('/api/generate-daily', { method: 'POST' });
+      const data = await res.json();
+      if (data.spark) {
+        const newPrompt: SparkPrompt = {
+          id: data.spark.id,
+          date: data.spark.date,
+          question: data.spark.question,
+          category: data.spark.category,
+          revealed: false,
+        };
+        const db = await getDB();
+        await db.put('spark_prompts', newPrompt);
+        setPrompts((prev) => [newPrompt, ...prev.filter((p) => p.date !== newPrompt.date)]);
+      }
+    } catch (e) {
+      console.error('AI generation failed:', e);
+    } finally {
+      setGeneratingAi(false);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto pb-24 safe-pt px-4 max-w-md mx-auto w-full">
       {/* Header */}
@@ -77,10 +104,14 @@ export default function SparkTab() {
           <h1 className="text-2xl font-bold text-[#F6EFE9]">Spark</h1>
         </div>
 
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FF8966]/15 border border-[#FF8966]/40 rounded-full">
-          <Flame className="w-4 h-4 text-[#FF8966]" />
-          <span className="text-xs font-bold text-[#FF8966]">Daily Prompt</span>
-        </div>
+        <button
+          onClick={handleGenerateAiPrompt}
+          disabled={generatingAi}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FF8966]/15 hover:bg-[#FF8966]/25 border border-[#FF8966]/40 rounded-full text-xs font-bold text-[#FF8966] transition-all active:scale-95 cursor-pointer"
+        >
+          <Sparkles className={`w-4 h-4 text-[#FF8966] ${generatingAi ? 'animate-spin' : ''}`} />
+          <span>{generatingAi ? 'Generating...' : 'Groq AI ✨'}</span>
+        </button>
       </div>
 
       {loading ? (

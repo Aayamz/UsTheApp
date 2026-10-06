@@ -70,8 +70,7 @@ export async function GET(request: Request) {
 
   const { data: pairs, error: pairsError } = await supabase
     .from('pairs')
-    .select('id, created_by, partner_id')
-    .not('partner_id', 'is', null);
+    .select('id, created_by, partner_id');
 
   if (pairsError) {
     return NextResponse.json({ error: pairsError.message }, { status: 500 });
