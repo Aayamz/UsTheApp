@@ -67,11 +67,17 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
 
 export async function getPairByInviteCode(supabase: SupabaseClient, code: string) {
   if (!code) return null;
-  const { data } = await supabase
+  const cleanCode = code.trim();
+  const { data, error } = await supabase
     .from('pairs')
     .select('*')
-    .eq('invite_code', code.trim())
+    .ilike('invite_code', cleanCode)
     .maybeSingle();
+
+  if (error) {
+    console.error('[getPairByInviteCode] Error querying pair:', error);
+  }
+
   return data;
 }
 
