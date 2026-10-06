@@ -33,9 +33,11 @@ export default function TrailTab() {
     try {
       const db = await getDB();
       const all = await db.getAll('trail_entries');
-      // Sort newest first
       all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setEntries(all);
+      
+      const uniqueMap = new Map<string, TrailEntry>();
+      all.forEach((item) => uniqueMap.set(item.id, item));
+      setEntries(Array.from(uniqueMap.values()));
     } catch (e) {
       console.error('Failed loading trail entries:', e);
     } finally {
@@ -47,7 +49,13 @@ export default function TrailTab() {
     loadTrailData();
     let cleanup: (() => void) | undefined;
     syncTrailEntries((updated) => {
-      setEntries(updated);
+      setEntries((prev) => {
+        // Prevent unnecessary state updates if JSON is unchanged
+        const currentJson = JSON.stringify(prev);
+        const updatedJson = JSON.stringify(updated);
+        if (currentJson === updatedJson) return prev;
+        return updated;
+      });
       setLoading(false);
     }).then((unsub) => {
       cleanup = unsub;
@@ -63,7 +71,6 @@ export default function TrailTab() {
     const isLiked = !currentlyLiked;
     const updatedLikes = isLiked ? currentLikes + 1 : Math.max(0, currentLikes - 1);
 
-    // Optimistic UI update
     setEntries((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, likesCount: updatedLikes, likedByMe: isLiked } : item
@@ -98,8 +105,7 @@ export default function TrailTab() {
       countdownTarget: newType === 'countdown' ? (countdownDate ? new Date(countdownDate).toISOString() : new Date(Date.now() + 14 * 86400000).toISOString()) : undefined,
     };
 
-    // Optimistic insert
-    setEntries((prev) => [newEntry, ...prev]);
+    setEntries((prev) => [newEntry, ...prev.filter((p) => p.id !== newEntry.id)]);
     setShowAddModal(false);
     setNewTitle('');
     setNewDesc('');
@@ -111,7 +117,6 @@ export default function TrailTab() {
     await queueMutation('trail_entries', 'insert', newEntry);
   };
 
-  // Preset sample images for quick add
   const sampleImages = [
     'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800&auto=format&fit=crop&q=80',
     'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=800&auto=format&fit=crop&q=80',
@@ -166,8 +171,10 @@ export default function TrailTab() {
               return (
                 <motion.div
                   key={item.id}
-                  initial={{ opacity: 0, y: 15 }}
+                  layout
+                  initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
                   className="contain-scroll-item relative overflow-hidden bg-gradient-to-br from-[#372A3E] to-[#25182C] border border-[#FF8966]/40 rounded-2xl p-5 shadow-xl"
                 >
                   <div className="absolute -top-10 -right-10 w-32 h-32 bg-[#FF8966]/10 rounded-full blur-2xl pointer-events-none" />
@@ -211,8 +218,10 @@ export default function TrailTab() {
             return (
               <motion.div
                 key={item.id}
-                initial={{ opacity: 0, y: 15 }}
+                layout
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
                 className="contain-scroll-item bg-[#372A3E] border border-[#4F3C59] rounded-2xl overflow-hidden shadow-md"
               >
                 {item.imageUrl && (
@@ -260,7 +269,7 @@ export default function TrailTab() {
         </div>
       )}
 
-      {/* Add Moment Modal with High Z-Index & Extra Scroll Margin */}
+      {/* Add Moment Modal */}
       <AnimatePresence>
         {showAddModal && (
           <motion.div
@@ -287,7 +296,6 @@ export default function TrailTab() {
               </div>
 
               <form onSubmit={handleCreateEntry} className="space-y-4">
-                {/* Entry Type selector */}
                 <div className="grid grid-cols-2 gap-2 bg-[#1F1324] p-1 rounded-xl border border-[#4F3C59]">
                   <button
                     type="button"
@@ -356,7 +364,6 @@ export default function TrailTab() {
                   />
                 </div>
 
-                {/* Preset image select */}
                 <div>
                   <label className="text-xs font-semibold text-[#C9B3D1] block mb-1.5">Cover Image</label>
                   <div className="grid grid-cols-4 gap-2 mb-2">

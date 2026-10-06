@@ -10,13 +10,17 @@ import SparkTab from './tabs/SparkTab';
 import SomedayTab from './tabs/SomedayTab';
 import PickTab from './tabs/PickTab';
 import NudgeTab from './tabs/NudgeTab';
-import { seedInitialDataIfEmpty } from '@/lib/db';
+import { seedInitialDataIfEmpty, NudgeRecord } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { joinPairByCode } from '@/lib/pairing';
+import { startGlobalPairSync } from '@/lib/pairSync';
+import { Bell } from 'lucide-react';
 
 export default function NavigationShell() {
   const [activeTab, setActiveTab] = useState<TabType>('trail');
   const [profileOpen, setProfileOpen] = useState(false);
+  const [nudgeToast, setNudgeToast] = useState<NudgeRecord | null>(null);
+
   const [spaces, setSpaces] = useState<GroupSpace[]>([
     { id: 'g-1', name: '💕 Couple Space: You & Partner', type: 'couple', memberCount: 2 },
     { id: 'g-2', name: '🎉 Group Event Capsules', type: 'group', memberCount: 1 },
@@ -34,6 +38,15 @@ export default function NavigationShell() {
 
   useEffect(() => {
     seedInitialDataIfEmpty().catch((err) => console.log('Database seed skipped:', err));
+
+    // Start global persistent Realtime synchronization for active pair
+    let cleanupSync: (() => void) | undefined;
+    startGlobalPairSync((nudge) => {
+      setNudgeToast(nudge);
+      setTimeout(() => setNudgeToast(null), 4000);
+    }).then((unsub) => {
+      cleanupSync = unsub;
+    });
 
     // Fetch user and partner from Supabase Auth & DB
     const fetchUserData = async () => {
@@ -66,7 +79,6 @@ export default function NavigationShell() {
         email.split('@')[0];
       const avatarUrl = authData.user.user_metadata?.avatar_url || '';
 
-      // Query pairs where user is creator or partner
       const { data: userPairs } = await supabase
         .from('pairs')
         .select('id, created_by, partner_id')
@@ -82,7 +94,6 @@ export default function NavigationShell() {
         null;
 
       if (activePair) {
-        // Keep profile.pair_id synced to active pair
         await supabase
           .from('profiles')
           .update({ pair_id: activePair.id })
@@ -136,7 +147,10 @@ export default function NavigationShell() {
       fetchUserData().catch(() => {});
     }, 4000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (cleanupSync) cleanupSync();
+    };
   }, []);
 
   const renderActiveTab = () => {
@@ -165,6 +179,37 @@ export default function NavigationShell() {
         onlineCount={activeSpace.memberCount}
         onOpenProfile={() => setProfileOpen(true)}
       />
+
+      {/* Floating Incoming Nudge Toast Banner */}
+      <AnimatePresence>
+        {nudgeToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="absolute top-16 left-4 right-4 z-50 max-w-md mx-auto bg-gradient-to-r from-[#FF8966] to-[#E56F4A] text-[#1F1324] px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between border border-[#FFF0E6]/30"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl animate-bounce">{nudgeToast.emoji}</span>
+              <div>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-[#1F1324]/80">Nudge Received</span>
+                <p className="text-xs font-bold text-[#1F1324] leading-tight">
+                  {nudgeToast.sender}: {nudgeToast.label}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setActiveTab('nudge');
+                setNudgeToast(null);
+              }}
+              className="px-3 py-1 bg-[#1F1324] text-[#F6EFE9] text-[11px] font-bold rounded-full shadow hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+            >
+              View
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Dynamic Tab View Container */}
       <main className="flex-1 relative w-full h-full overflow-hidden flex flex-col">
