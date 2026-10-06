@@ -27,6 +27,7 @@ create table if not exists trail_entries (
   location text,
   created_at timestamptz default now()
 );
+alter table trail_entries drop constraint if exists trail_entries_partner_fkey;
 alter table trail_entries alter column pair_id drop not null;
 alter table trail_entries alter column partner type text using partner::text;
 
