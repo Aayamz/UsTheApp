@@ -171,3 +171,111 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.detect_invite_type(text) TO authenticated;
+
+-- ── 5. Get Friend Space details with couple names ──
+CREATE OR REPLACE FUNCTION public.get_friend_space_details(p_user_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_fs_id uuid;
+  v_fs_name text;
+  v_pair_id uuid;
+  v_creator_name text;
+  v_partner_name text;
+BEGIN
+  SELECT fs.id, fs.name, fs.couple_pair_id
+    INTO v_fs_id, v_fs_name, v_pair_id
+  FROM public.friend_spaces fs
+  JOIN public.friend_space_members fsm ON fsm.friend_space_id = fs.id
+  WHERE fsm.user_id = p_user_id
+  LIMIT 1;
+
+  IF v_fs_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT p1.display_name, p2.display_name
+    INTO v_creator_name, v_partner_name
+  FROM public.pairs p
+  LEFT JOIN public.profiles p1 ON p1.id = p.created_by
+  LEFT JOIN public.profiles p2 ON p2.id = p.partner_id
+  WHERE p.id = v_pair_id;
+
+  RETURN json_build_object(
+    'friend_space_id', v_fs_id,
+    'name', v_fs_name,
+    'couple_pair_id', v_pair_id,
+    'creator_name', COALESCE(v_creator_name, 'Couple'),
+    'partner_name', COALESCE(v_partner_name, '')
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_friend_space_details(uuid) TO authenticated;
+
+-- ── 6. Friend sends a time capsule / wish to couple's Someday ──
+CREATE OR REPLACE FUNCTION public.send_friend_time_capsule(
+  p_friend_space_id uuid,
+  p_title text,
+  p_content text,
+  p_unlock_date timestamptz,
+  p_event_name text DEFAULT 'Friend Wish'
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_pair_id uuid;
+  v_user_name text;
+  v_capsule_id text;
+BEGIN
+  SELECT fs.couple_pair_id INTO v_pair_id
+  FROM public.friend_spaces fs
+  JOIN public.friend_space_members fsm ON fsm.friend_space_id = fs.id
+  WHERE fs.id = p_friend_space_id AND fsm.user_id = auth.uid();
+
+  IF v_pair_id IS NULL THEN
+    RAISE EXCEPTION 'Not a member of this friend space';
+  END IF;
+
+  SELECT fsm.display_name INTO v_user_name
+  FROM public.friend_space_members fsm
+  WHERE fsm.friend_space_id = p_friend_space_id AND fsm.user_id = auth.uid();
+
+  v_capsule_id := 'c-friend-' || gen_random_uuid();
+
+  INSERT INTO public.someday_capsules (
+    id,
+    pair_id,
+    title,
+    content,
+    unlock_date,
+    sealed_by,
+    is_unlocked,
+    is_event_scoped,
+    event_name,
+    created_at
+  ) VALUES (
+    v_capsule_id,
+    v_pair_id,
+    p_title,
+    p_content,
+    p_unlock_date,
+    auth.uid(),
+    false,
+    true,
+    COALESCE(p_event_name, 'Wish from ' || COALESCE(v_user_name, 'a Friend')),
+    now()
+  );
+
+  RETURN v_pair_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.send_friend_time_capsule(uuid, text, text, timestamptz, text) TO authenticated;
+
