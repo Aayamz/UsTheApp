@@ -105,42 +105,50 @@ export async function ensurePairForUser(supabase: SupabaseClient, userId: string
 // ----------------------------------------------------------------
 // PARTNER invite flow – join as romantic partner in couple's space
 // Uses the main invite_code on the pairs table
+// Uses SECURITY DEFINER RPC to bypass RLS (needed for detection)
 // ----------------------------------------------------------------
 export async function getPairByInviteCode(supabase: SupabaseClient, code: string) {
   if (!code) return null;
   const cleanCode = code.trim();
+
+  // Use RPC to bypass RLS — only returns minimal safe fields
   const { data, error } = await supabase
-    .from('pairs')
-    .select('*')
-    .ilike('invite_code', cleanCode)
-    .maybeSingle();
+    .rpc('get_pair_by_invite_code', { p_code: cleanCode });
 
   if (error) {
-    console.error('[getPairByInviteCode] Error querying pair:', error);
+    console.error('[getPairByInviteCode] RPC error:', error);
+    // Fallback: direct query (works for open/self-owned pairs)
+    const { data: fallback } = await supabase
+      .from('pairs')
+      .select('id, invite_code, created_by, partner_id, friend_invite_code')
+      .ilike('invite_code', cleanCode)
+      .maybeSingle();
+    return fallback;
   }
 
-  return data;
+  return Array.isArray(data) ? data[0] ?? null : data;
 }
 
 // ----------------------------------------------------------------
 // FRIEND invite flow – join as friend in a SEPARATE friend_space
 // Uses the friend_invite_code on the pairs table
+// Uses SECURITY DEFINER RPC to bypass RLS (friends can't read
+// fully-paired couples via direct table queries)
 // Friends NEVER get pair_id set to the couple's pair
 // ----------------------------------------------------------------
 export async function getPairByFriendCode(supabase: SupabaseClient, code: string) {
   if (!code) return null;
   const cleanCode = code.trim();
+
   const { data, error } = await supabase
-    .from('pairs')
-    .select('id, friend_invite_code, created_by, partner_id')
-    .ilike('friend_invite_code', cleanCode)
-    .maybeSingle();
+    .rpc('get_pair_by_friend_code', { p_code: cleanCode });
 
   if (error) {
-    console.error('[getPairByFriendCode] Error querying pair by friend code:', error);
+    console.error('[getPairByFriendCode] RPC error:', error);
+    return null;
   }
 
-  return data;
+  return Array.isArray(data) ? data[0] ?? null : data;
 }
 
 // ----------------------------------------------------------------
@@ -241,7 +249,11 @@ export async function joinPairByCode(
 
 // ----------------------------------------------------------------
 // Join as FRIEND (separate friend_space) - uses friend_invite_code
-// Friends see ONLY their friend_space, NEVER the couple's private data
+// Uses a SECURITY DEFINER RPC that atomically:
+//   1. Finds pair by friend_invite_code (bypasses RLS)
+//   2. Creates friend_space if needed
+//   3. Adds user to friend_space_members
+//   4. Does NOT set friend's pair_id to couple's pair
 // ----------------------------------------------------------------
 export async function joinAsFriend(
   supabase: SupabaseClient,
@@ -250,13 +262,6 @@ export async function joinAsFriend(
 ): Promise<{ friendSpace: any; role: 'friend' } | null> {
   if (!friendCode || !userId) return null;
 
-  // Find the couple pair via friend_invite_code
-  const couplePair = await getPairByFriendCode(supabase, friendCode.trim());
-  if (!couplePair) {
-    console.error('[joinAsFriend] No couple pair found for friend code:', friendCode);
-    return null;
-  }
-
   const { data: authUser } = await supabase.auth.getUser();
   const userEmail = authUser?.user?.email || '';
   const displayName =
@@ -264,53 +269,31 @@ export async function joinAsFriend(
     authUser?.user?.user_metadata?.name ||
     (userEmail ? userEmail.split('@')[0] : 'Friend');
 
-  // If this person is already one of the couple partners, don't add as friend
-  if (couplePair.created_by === userId || couplePair.partner_id === userId) {
-    console.warn('[joinAsFriend] User is already a couple member, not joining as friend.');
+  // Call the security-definer RPC — handles everything atomically
+  const { data: friendSpaceId, error } = await supabase
+    .rpc('join_as_friend', {
+      p_friend_code: friendCode.trim(),
+      p_user_id: userId,
+      p_display_name: displayName,
+    });
+
+  if (error) {
+    console.error('[joinAsFriend] RPC error:', error);
     return null;
   }
 
-  // Ensure friend_space exists for this couple
-  const friendSpace = await ensureFriendSpaceForPair(supabase, couplePair.id);
-  if (!friendSpace) return null;
-
-  // Add user to friend_space_members (upsert = idempotent)
-  const { error: memberError } = await supabase
-    .from('friend_space_members')
-    .upsert({
-      friend_space_id: friendSpace.id,
-      user_id: userId,
-      display_name: displayName,
-    }, { onConflict: 'friend_space_id,user_id' });
-
-  if (memberError) {
-    console.error('[joinAsFriend] Error adding to friend_space_members:', memberError);
+  if (!friendSpaceId) {
+    console.error('[joinAsFriend] RPC returned null — invalid code or user is already couple member');
+    return null;
   }
 
-  // IMPORTANT: Friend does NOT get pair_id set to couple's pair
-  // Friends have their own profile WITHOUT the couple's pair_id
-  // Ensure friend has a profile row (but NOT linked to couple's pair)
-  const { data: existingProfile } = await supabase
-    .from('profiles')
-    .select('id, pair_id')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (!existingProfile) {
-    // New user - create profile without any pair_id
-    await supabase.from('profiles').upsert({
-      id: userId,
-      display_name: displayName,
-      pair_id: null,
-    });
-  }
-  // Existing users keep their own pair_id (if they have their own couple space)
-
-  return { friendSpace, role: 'friend' };
+  return { friendSpace: { id: friendSpaceId }, role: 'friend' };
 }
 
 // ----------------------------------------------------------------
 // Detect invite type: is this a partner code or friend code?
+// Uses SECURITY DEFINER RPC so it works regardless of whether
+// the couple already has both partners joined.
 // ----------------------------------------------------------------
 export type InviteType = 'partner' | 'friend' | 'invalid';
 
@@ -321,29 +304,35 @@ export async function detectInviteType(
   if (!code) return { type: 'invalid' };
   const cleanCode = code.trim();
 
-  // Check partner invite_code first
-  const { data: partnerPair } = await supabase
-    .from('pairs')
-    .select('id, invite_code, partner_id, created_by')
-    .ilike('invite_code', cleanCode)
-    .maybeSingle();
+  // Use security-definer RPC — bypasses RLS, works for all cases
+  const { data: result, error } = await supabase
+    .rpc('detect_invite_type', { p_code: cleanCode });
 
-  if (partnerPair) {
-    return { type: 'partner', pair: partnerPair };
+  if (error) {
+    console.error('[detectInviteType] RPC error:', error);
+    // Fallback to direct queries (works for open pairs at least)
+    const { data: partnerPair } = await supabase
+      .from('pairs')
+      .select('id, invite_code, partner_id, created_by')
+      .ilike('invite_code', cleanCode)
+      .maybeSingle();
+
+    if (partnerPair) return { type: 'partner', pair: partnerPair };
+    return { type: 'invalid' };
   }
 
-  // Check friend_invite_code
-  const { data: friendPair } = await supabase
-    .from('pairs')
-    .select('id, friend_invite_code, partner_id, created_by')
-    .ilike('friend_invite_code', cleanCode)
-    .maybeSingle();
-
-  if (friendPair) {
-    return { type: 'friend', pair: friendPair };
+  if (!result || result.type === 'invalid') {
+    return { type: 'invalid' };
   }
 
-  return { type: 'invalid' };
+  // Shape the pair object to match what the join page expects
+  const pair = {
+    id: result.pair_id,
+    created_by: result.created_by,
+    partner_id: result.partner_id,
+  };
+
+  return { type: result.type as InviteType, pair };
 }
 
 // ----------------------------------------------------------------
