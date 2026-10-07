@@ -12,20 +12,20 @@ import PickTab from './tabs/PickTab';
 import NudgeTab from './tabs/NudgeTab';
 import { seedInitialDataIfEmpty, NudgeRecord } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-import { joinPairByCode } from '@/lib/pairing';
 import { startGlobalPairSync } from '@/lib/pairSync';
-import { Bell } from 'lucide-react';
 
 export default function NavigationShell() {
   const [activeTab, setActiveTab] = useState<TabType>('trail');
   const [profileOpen, setProfileOpen] = useState(false);
   const [nudgeToast, setNudgeToast] = useState<NudgeRecord | null>(null);
 
-  const [spaces, setSpaces] = useState<GroupSpace[]>([
-    { id: 'g-1', name: '💕 Couple Space: You & Partner', type: 'couple', memberCount: 2 },
-    { id: 'g-2', name: '🎉 Group Event Capsules', type: 'group', memberCount: 1 },
-  ]);
-  const [activeSpace, setActiveSpace] = useState<GroupSpace>(spaces[0]);
+  // Couple space is the ONLY space - friends have their own separate space
+  const [coupleSpace, setCoupleSpace] = useState<GroupSpace>({
+    id: '',
+    name: '💕 Your Private Space',
+    type: 'couple',
+    memberCount: 1,
+  });
 
   const [currentUser, setCurrentUser] = useState<UserProfileInfo>({
     name: 'You',
@@ -53,25 +53,6 @@ export default function NavigationShell() {
       const { data: authData } = await supabase.auth.getUser();
       if (!authData.user) return;
 
-      // Auto-claim pending invite if user logged in via invite link
-      if (typeof window !== 'undefined') {
-        let pendingCode = localStorage.getItem('pending_invite_code');
-        if (!pendingCode) {
-          const match = document.cookie.match(/(?:^|; )pending_invite_code=([^;]*)/);
-          if (match) pendingCode = decodeURIComponent(match[1]);
-        }
-
-        if (pendingCode) {
-          try {
-            await joinPairByCode(supabase, pendingCode, authData.user.id);
-            localStorage.removeItem('pending_invite_code');
-            document.cookie = 'pending_invite_code=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-          } catch (e) {
-            console.error('Error auto-claiming pending invite:', e);
-          }
-        }
-      }
-
       const email = authData.user.email || 'user@u-and-me.app';
       const displayName =
         authData.user.user_metadata?.full_name ||
@@ -79,15 +60,16 @@ export default function NavigationShell() {
         email.split('@')[0];
       const avatarUrl = authData.user.user_metadata?.avatar_url || '';
 
-      // 1. Fetch user's primary Couple Pair
-      const { ensurePairForUser, ensureGroupSpaceForPair } = await import('@/lib/pairing');
+      // Fetch user's Couple Pair ONLY - no friend spaces in main shell
+      const { ensurePairForUser } = await import('@/lib/pairing');
       const couplePair = await ensurePairForUser(supabase, authData.user.id);
 
-      // Find partner name if partner is connected in couplePair
-      let partnerName: string | null = null;
+      // Determine if user is creator or partner
       const isCreatorInCouple = couplePair.created_by === authData.user.id;
       const partnerId = isCreatorInCouple ? couplePair.partner_id : couplePair.created_by;
 
+      // Find partner name
+      let partnerName: string | null = null;
       if (partnerId && partnerId !== authData.user.id) {
         const { data: partnerProfile } = await supabase
           .from('profiles')
@@ -100,77 +82,23 @@ export default function NavigationShell() {
         }
       }
 
-      // Build Private Couple Space Item (STRICTLY 2 members max, Private to couple)
+      // Build Private Couple Space (STRICTLY 2 members max)
       const coupleSpaceTitle = partnerName
-        ? `💕 Couple Space: ${displayName} & ${partnerName}`
-        : `💕 Private Space: ${displayName}`;
+        ? `💕 ${displayName} & ${partnerName}`
+        : `💕 Your Private Space`;
 
-      const coupleSpaceItem: GroupSpace = {
+      const updatedCoupleSpace: GroupSpace = {
         id: couplePair.id,
         name: coupleSpaceTitle,
         type: 'couple',
         memberCount: partnerName ? 2 : 1,
       };
 
-      // 2. Fetch or Ensure Group Event Space
-      const groupPair = await ensureGroupSpaceForPair(supabase, couplePair, authData.user.id);
+      setCoupleSpace(updatedCoupleSpace);
 
-      // Fetch all friend members for group space
-      const { data: groupSm } = await supabase
-        .from('space_members')
-        .select('user_id')
-        .eq('space_id', groupPair.id)
-        .eq('role', 'friend');
-
-      const friendCount = (groupSm || []).filter(
-        (sm) => sm.user_id !== couplePair.created_by && sm.user_id !== couplePair.partner_id
-      ).length;
-
-      const groupSpaceItem: GroupSpace = {
-        id: groupPair.id,
-        name: '🎉 Group Event Capsules',
-        type: 'group',
-        memberCount: friendCount,
-      };
-
-      const updatedSpaces = [coupleSpaceItem, groupSpaceItem];
-      setSpaces(updatedSpaces);
-
-      // Get user profile to check active pair_id preference
-      const { data: userProfile } = await supabase
-        .from('profiles')
-        .select('pair_id')
-        .eq('id', authData.user.id)
-        .maybeSingle();
-
-      // Determine active space (preserve existing selection if valid)
-      let activeItem: GroupSpace | undefined;
-      setActiveSpace((prevActive) => {
-        activeItem = updatedSpaces.find((s) => s.id === prevActive?.id);
-        if (!activeItem && userProfile?.pair_id) {
-          activeItem = updatedSpaces.find((s) => s.id === userProfile.pair_id);
-        }
-        if (!activeItem) {
-          activeItem = updatedSpaces[0]; // Default to Private Couple Space
-        }
-        return activeItem;
-      });
-
-      // Determine user role in active space
-      const activeId = activeItem?.id || userProfile?.pair_id || couplePair.id;
-      let role: 'creator' | 'partner' | 'friend' = 'creator';
-      let roleLabel = 'Creator / Admin 👑';
-
-      if (activeId === groupPair.id && groupPair.created_by !== authData.user.id && groupPair.partner_id !== authData.user.id) {
-        role = 'friend';
-        roleLabel = 'Friend Member 🥳';
-      } else if (isCreatorInCouple) {
-        role = 'creator';
-        roleLabel = 'Creator / Admin 👑';
-      } else {
-        role = 'partner';
-        roleLabel = 'Partner 💖';
-      }
+      // Determine user role
+      const role: 'creator' | 'partner' = isCreatorInCouple ? 'creator' : 'partner';
+      const roleLabel = isCreatorInCouple ? 'Creator / Admin 👑' : 'Partner 💖';
 
       setCurrentUser({
         name: displayName,
@@ -186,7 +114,7 @@ export default function NavigationShell() {
 
     const interval = setInterval(() => {
       fetchUserData().catch(() => {});
-    }, 4000);
+    }, 8000);
 
     return () => {
       clearInterval(interval);
@@ -216,8 +144,8 @@ export default function NavigationShell() {
       {/* Top Header Bar */}
       <TopHeaderBar
         user={currentUser}
-        activeSpaceName={activeSpace.name}
-        onlineCount={activeSpace.memberCount}
+        activeSpaceName={coupleSpace.name}
+        onlineCount={coupleSpace.memberCount}
         onOpenProfile={() => setProfileOpen(true)}
       />
 
@@ -271,24 +199,16 @@ export default function NavigationShell() {
       {/* Bottom Tab Navigation Bar */}
       <BottomTabBar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Profile & Group Drawer Modal */}
+      {/* Profile & Invite Drawer Modal */}
       <ProfileDrawer
         isOpen={profileOpen}
         onClose={() => setProfileOpen(false)}
         currentUser={currentUser}
-        activeSpace={activeSpace}
-        allSpaces={spaces}
-        onSelectSpace={async (space) => {
-          setActiveSpace(space);
+        activeSpace={coupleSpace}
+        allSpaces={[coupleSpace]}
+        onSelectSpace={() => {
+          // Only one space (couple space) - no switching
           setProfileOpen(false);
-          const { data: authData } = await supabase.auth.getUser();
-          if (authData.user) {
-            await supabase.from('profiles').upsert({
-              id: authData.user.id,
-              pair_id: space.id,
-            });
-            startGlobalPairSync().catch(() => {});
-          }
         }}
       />
     </div>

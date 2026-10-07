@@ -11,6 +11,7 @@ export async function getActivePairId(): Promise<string | null> {
   const { data: authData } = await supabase.auth.getUser();
   if (!authData?.user) return null;
 
+  // 1. Check profile's pair_id (fastest path)
   const { data: profile } = await supabase
     .from('profiles')
     .select('pair_id')
@@ -26,28 +27,19 @@ export async function getActivePairId(): Promise<string | null> {
     if (validPair) return validPair.id;
   }
 
-  const { data: memberRow } = await supabase
-    .from('space_members')
-    .select('space_id')
-    .eq('user_id', authData.user.id)
-    .maybeSingle();
-
-  if (memberRow?.space_id) {
-    await supabase
-      .from('profiles')
-      .upsert({ id: authData.user.id, pair_id: memberRow.space_id });
-    return memberRow.space_id;
-  }
-
+  // 2. Search pairs where this user is creator or partner
+  // NOTE: We do NOT fall back to space_members or friend_space_members —
+  // friends have their own separate space and should NOT get couple data
   const { data: pairs } = await supabase
     .from('pairs')
     .select('id, created_by, partner_id')
     .or(`created_by.eq.${authData.user.id},partner_id.eq.${authData.user.id}`);
 
   if (pairs && pairs.length > 0) {
+    // Prefer a pair where they're actually a partner/creator
     const active =
-      pairs.find((p) => p.partner_id !== null) ||
-      pairs.find((p) => p.partner_id === authData.user.id) ||
+      pairs.find((p) => p.partner_id !== null && (p.partner_id === authData.user.id || p.created_by === authData.user.id)) ||
+      pairs.find((p) => p.created_by === authData.user.id) ||
       pairs[0];
 
     if (active) {

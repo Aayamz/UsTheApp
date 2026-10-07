@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { ensurePairForUser } from '@/lib/pairing';
-import InviteWaiting from '@/components/auth/InviteWaiting';
+import InviteHub from '@/components/auth/InviteHub';
 import Logo from '@/components/Logo';
 
 export const dynamic = 'force-dynamic';
@@ -17,10 +17,20 @@ export default async function InvitePage() {
   const pair = await ensurePairForUser(supabase, user.id);
 
   return (
-    <div className="min-h-full w-full flex flex-col items-center justify-center gap-6 px-8 py-12 text-center bg-[#1F1324] text-[#F6EFE9]">
-      <Logo size={48} showWordmark />
-      <h1 className="text-xl font-bold">Invite your partner or friends</h1>
-      <InviteWaiting pairId={pair.id} inviteCode={pair.invite_code} />
+    <div className="min-h-full w-full flex flex-col items-center justify-start gap-6 px-6 py-10 bg-[#1F1324] text-[#F6EFE9] overflow-y-auto">
+      <Logo size={44} showWordmark />
+      <div className="text-center space-y-1.5 max-w-sm">
+        <h1 className="text-2xl font-bold">Invite to Your Space</h1>
+        <p className="text-sm text-[#C9B3D1] leading-relaxed">
+          Partner and friend invites are completely separate — friends can never see your private couple space.
+        </p>
+      </div>
+      <InviteHub
+        pairId={pair.id}
+        partnerInviteCode={pair.invite_code}
+        friendInviteCode={pair.friend_invite_code}
+        hasPartner={!!pair.partner_id}
+      />
     </div>
   );
 }
