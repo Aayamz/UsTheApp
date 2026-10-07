@@ -36,7 +36,7 @@ export default function FriendJoinedPage() {
       </div>
 
       <Link
-        href="/"
+        href="/friend-space"
         className="w-full max-w-xs py-3.5 bg-[#FF8966] text-[#1F1324] font-bold text-sm rounded-2xl flex items-center justify-center gap-2 transition-all hover:bg-[#FF8966]/90"
       >
         Continue

@@ -12,10 +12,7 @@ export default async function Home() {
 
   if (!user) redirect('/login');
 
-  // ── Pair check ──────────────────────────────────────────────
-  // Only let users into the main app if they are a proper couple
-  // member (creator OR partner in a pair). Friends and brand-new
-  // users who haven't joined a couple space are redirected to /invite.
+  // ── 1. Check if user is a couple member (creator or partner) ──
   const { data: pairs } = await supabase
     .from('pairs')
     .select('id, created_by, partner_id')
@@ -24,10 +21,29 @@ export default async function Home() {
 
   const activePair = pairs?.[0] ?? null;
 
-  if (!activePair) {
-    // New user or friend whose invite failed — send to invite/onboarding
-    redirect('/invite');
+  if (activePair) {
+    // Full app for couple members
+    return <NavigationShell />;
   }
 
-  return <NavigationShell />;
+  // ── 2. Check if user is a friend space member ──────────────
+  // Friends are NOT in the pairs table, they're in friend_space_members.
+  // We use the RPC to avoid RLS issues if the table exists.
+  try {
+    const { data: friendRows } = await supabase
+      .from('friend_space_members')
+      .select('friend_space_id')
+      .eq('user_id', user.id)
+      .limit(1);
+
+    if (friendRows && friendRows.length > 0) {
+      // Friend has a valid space — send them to the friend landing page
+      redirect('/friend-space');
+    }
+  } catch {
+    // Table may not exist yet if SQL migration hasn't been run
+  }
+
+  // ── 3. No couple pair AND no friend space → onboarding ────
+  redirect('/invite');
 }
